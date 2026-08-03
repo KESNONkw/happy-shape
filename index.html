@@ -993,16 +993,37 @@
     var u = new SpeechSynthesisUtterance(spoken);
     u.lang = "ja-JP";
     var meta = CHAR_META[charName];
+    var rate = (meta ? meta.rate : 1) * globalRate;
     u.pitch = meta ? meta.pitch : 1;
-    u.rate = (meta ? meta.rate : 1) * globalRate;
+    u.rate = rate;
     var uri = charName ? charVoiceURI[charName] : "";
     if (uri){
       var v = voiceList.find(function(v){ return v.voiceURI === uri; });
       if (v) u.voice = v;
     }
-    u.onend = function(){ onend && onend(); };
-    u.onerror = function(){ onend && onend(); };
-    speechSynthesis.speak(u);
+
+    var settled = false;
+    function finish(){
+      if (settled) return;
+      settled = true;
+      clearTimeout(watchdog);
+      onend && onend();
+    }
+    u.onend = finish;
+    u.onerror = finish;
+
+    // Some mobile browsers (notably iOS WebKit, which underlies Chrome/Edge/etc. on
+    // iPhone too) can silently drop an utterance: it never fires start/end/error and
+    // playback gets stuck forever showing "speaking". Size a watchdog to the text
+    // length so we always move on even when the browser stays silent.
+    var watchdogMs = Math.max(2000, spoken.length * 250 / rate) + 3000;
+    var watchdog = setTimeout(function(){
+      speechSynthesis.cancel();
+      finish();
+    }, watchdogMs);
+
+    speechSynthesis.cancel(); // clear any stuck queue before speaking (iOS WebKit workaround)
+    setTimeout(function(){ speechSynthesis.speak(u); }, 30);
   }
 
   /* ---------------- recorded-audio storage (IndexedDB) ---------------- */
@@ -1118,12 +1139,20 @@
 
   async function fetchSharedRecording(cueIndex){
     if (sharedMissCache[cueIndex]) return null;
-    // probe all known extensions in parallel — takes one round-trip, not up to five in a row
+    // probe all known extensions in parallel — takes one round-trip, not up to five in a row.
+    // each probe is aborted after 2.5s so a stalled/slow network (common on mobile data)
+    // can never leave playback hanging indefinitely waiting on this check.
     var attempts = SHARED_EXTS.map(function(ext){
-      return fetch("recordings/" + cueIndex + "." + ext).then(function(res){
-        if (res && res.ok) return res.blob();
-        throw new Error("miss");
-      });
+      var controller = new AbortController();
+      var timer = setTimeout(function(){ controller.abort(); }, 2500);
+      return fetch("recordings/" + cueIndex + "." + ext, { signal: controller.signal }).then(
+        function(res){
+          clearTimeout(timer);
+          if (res && res.ok) return res.blob();
+          throw new Error("miss");
+        },
+        function(err){ clearTimeout(timer); throw err; }
+      );
     });
     try {
       return await Promise.any(attempts);
