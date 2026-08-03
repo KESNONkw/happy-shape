@@ -191,6 +191,21 @@
   .status-pill.speaking{ color:var(--accent); border-color:var(--accent); }
   .status-pill.you{ color:var(--accent-2); border-color:var(--accent-2); }
 
+  .record-row{
+    display:none; align-items:center; gap:.5rem; font-size:.78rem; color:var(--ink-dim);
+    padding:.15rem .1rem .35rem;
+  }
+  .record-row.recording{ color:var(--danger); }
+  .record-row .rec-dot{
+    width:.5rem; height:.5rem; border-radius:50%; background:var(--danger); flex:none; display:none;
+  }
+  .record-row.recording .rec-dot{ display:inline-block; animation:recpulse 1s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce){ .record-row.recording .rec-dot{ animation:none; } }
+  @keyframes recpulse{ 0%,100%{ opacity:1; } 50%{ opacity:.3; } }
+  .record-status{ flex:1; }
+  .record-status.has-audio{ cursor:pointer; text-decoration:underline; text-underline-offset:2px; color:var(--accent-2); }
+  .rec-btn{ font-size:.76rem; padding:.4rem .55rem; white-space:nowrap; }
+
   .ctrl-row{ display:flex; gap:.5rem; align-items:stretch; }
   .btn{
     border:1px solid var(--border); background:var(--surface-2); color:var(--ink);
@@ -288,6 +303,14 @@
   <div class="status-line">
     <span class="status-pill" id="status-pill">準備完了</span>
     <span id="progress-label" style="margin-left:auto; font-family:var(--mono); font-variant-numeric:tabular-nums;"></span>
+  </div>
+  <div class="record-row" id="record-row">
+    <span class="rec-dot" id="rec-dot"></span>
+    <span class="record-status" id="record-status">未録音</span>
+    <button class="btn rec-btn" id="rec-start-btn" title="このセリフの録音を開始">● 録音開始</button>
+    <button class="btn rec-btn" id="rec-stop-btn" title="録音を停止して保存" disabled>■ 録音停止</button>
+    <button class="btn rec-btn ghost" id="rec-share-btn" title="録音停止時に自動保存されたファイルを見失った場合、もう一度ダウンロードします" disabled>⬇ もう一度DL</button>
+    <button class="btn rec-btn ghost" id="rec-delete-btn" title="このセリフの録音を削除" disabled>🗑 削除</button>
   </div>
   <div class="ctrl-row">
     <button class="btn ghost" id="back-btn" title="一つ戻る">◀ 戻る</button>
@@ -982,7 +1005,260 @@
     speechSynthesis.speak(u);
   }
 
-  function cancelSpeech(){ if (synthAvailable) speechSynthesis.cancel(); }
+  /* ---------------- recorded-audio storage (IndexedDB) ---------------- */
+  var recordingSupported = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+  var dbPromise = null;
+
+  function getDB(){
+    if (dbPromise) return dbPromise;
+    dbPromise = new Promise(function(resolve, reject){
+      if (!("indexedDB" in window)){ reject(new Error("no indexedDB")); return; }
+      var req = indexedDB.open("castRecordingsDB", 1);
+      req.onupgradeneeded = function(){ req.result.createObjectStore("recordings", { keyPath:"cueIndex" }); };
+      req.onsuccess = function(){ resolve(req.result); };
+      req.onerror = function(){ reject(req.error); };
+    });
+    return dbPromise;
+  }
+
+  function saveRecording(cueIndex, character, blob){
+    return getDB().then(function(db){
+      return new Promise(function(resolve, reject){
+        var tx = db.transaction("recordings","readwrite");
+        tx.objectStore("recordings").put({ cueIndex:cueIndex, character:character, blob:blob });
+        tx.oncomplete = function(){ resolve(); };
+        tx.onerror = function(){ reject(tx.error); };
+      });
+    });
+  }
+
+  function loadRecording(cueIndex){
+    return getDB().then(function(db){
+      return new Promise(function(resolve, reject){
+        var tx = db.transaction("recordings","readonly");
+        var req = tx.objectStore("recordings").get(cueIndex);
+        req.onsuccess = function(){ resolve(req.result || null); };
+        req.onerror = function(){ reject(req.error); };
+      });
+    });
+  }
+
+  function deleteRecording(cueIndex){
+    return getDB().then(function(db){
+      return new Promise(function(resolve, reject){
+        var tx = db.transaction("recordings","readwrite");
+        tx.objectStore("recordings").delete(cueIndex);
+        tx.oncomplete = function(){ resolve(); };
+        tx.onerror = function(){ reject(tx.error); };
+      });
+    });
+  }
+
+  /* ---------------- microphone recording ---------------- */
+  var mediaStream = null;
+  var mediaRecorder = null;
+  var recordedChunks = [];
+  var recordingCueIndex = null;
+
+  function startRecording(){
+    if (!recordingSupported || !CUES[state.idx]) return;
+    recordingCueIndex = state.idx;
+    navigator.mediaDevices.getUserMedia({ audio:true }).then(function(stream){
+      mediaStream = stream;
+      recordedChunks = [];
+      mediaRecorder = new MediaRecorder(stream);
+      mediaRecorder.ondataavailable = function(e){ if (e.data && e.data.size) recordedChunks.push(e.data); };
+      mediaRecorder.onstop = function(){
+        var blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "audio/webm" });
+        if (mediaStream){ mediaStream.getTracks().forEach(function(t){ t.stop(); }); mediaStream = null; }
+        if (blob.size > 0 && recordingCueIndex !== null && CUES[recordingCueIndex]){
+          var savedCueIndex = recordingCueIndex;
+          saveRecording(savedCueIndex, CUES[savedCueIndex].character, blob).then(function(){
+            updateRecordUI();
+            triggerBlobDownload(blob, savedCueIndex); // stop = save locally + hand you the file to upload, no extra click
+          });
+        } else {
+          updateRecordUI();
+        }
+      };
+      mediaRecorder.start();
+      updateRecordUI();
+    }).catch(function(){
+      recordStatusEl.textContent = "マイクにアクセスできませんでした（権限やhttps接続を確認してください）";
+      recordingCueIndex = null;
+    });
+  }
+
+  function stopRecording(){
+    if (mediaRecorder && mediaRecorder.state === "recording") mediaRecorder.stop();
+  }
+
+  function abortActiveRecording(){
+    if (mediaRecorder && mediaRecorder.state === "recording"){
+      mediaRecorder.ondataavailable = null;
+      mediaRecorder.onstop = function(){
+        if (mediaStream){ mediaStream.getTracks().forEach(function(t){ t.stop(); }); mediaStream = null; }
+      };
+      mediaRecorder.stop();
+    }
+    mediaRecorder = null;
+    recordingCueIndex = null;
+  }
+
+  var recordRowEl = document.getElementById("record-row");
+  var recordStatusEl = document.getElementById("record-status");
+  var recStartBtn = document.getElementById("rec-start-btn");
+  var recStopBtn = document.getElementById("rec-stop-btn");
+  var recShareBtn = document.getElementById("rec-share-btn");
+  var recDeleteBtn = document.getElementById("rec-delete-btn");
+
+  /* ---------------- shared recordings (fetched from a "recordings/" folder next to this page) ---------------- */
+  var SHARED_EXTS = ["webm","mp4","m4a","ogg","wav"];
+  var sharedMissCache = {}; // cueIndex -> true, once confirmed absent (avoids re-fetching every time)
+
+  async function fetchSharedRecording(cueIndex){
+    if (sharedMissCache[cueIndex]) return null;
+    // probe all known extensions in parallel — takes one round-trip, not up to five in a row
+    var attempts = SHARED_EXTS.map(function(ext){
+      return fetch("recordings/" + cueIndex + "." + ext).then(function(res){
+        if (res && res.ok) return res.blob();
+        throw new Error("miss");
+      });
+    });
+    try {
+      return await Promise.any(attempts);
+    } catch (e){
+      sharedMissCache[cueIndex] = true;
+      return null;
+    }
+  }
+
+  function extensionForMime(mime){
+    if (mime && mime.indexOf("mp4") !== -1) return "mp4";
+    if (mime && mime.indexOf("ogg") !== -1) return "ogg";
+    if (mime && mime.indexOf("wav") !== -1) return "wav";
+    return "webm";
+  }
+
+  function triggerBlobDownload(blob, cueIndex){
+    var ext = extensionForMime(blob.type);
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = cueIndex + "." + ext;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+  }
+
+  function downloadRecordingForSharing(cueIndex){
+    loadRecording(cueIndex).then(function(rec){
+      if (rec && rec.blob) triggerBlobDownload(rec.blob, cueIndex);
+    });
+  }
+
+  function updateRecordUI(){
+    var idxAtCall = state.idx;
+    var cue = CUES[idxAtCall];
+    var showRow = state.mode === "solo" && !!cue && currentCueIsUserLine(cue);
+    recordRowEl.style.display = showRow ? "flex" : "none";
+    if (!showRow) return;
+
+    if (!recordingSupported){
+      recordStatusEl.textContent = "この端末・ブラウザは録音に対応していません";
+      recordStatusEl.classList.remove("has-audio");
+      recStartBtn.disabled = true; recStopBtn.disabled = true; recShareBtn.disabled = true; recDeleteBtn.disabled = true;
+      recordRowEl.classList.remove("recording");
+      return;
+    }
+
+    var recording = mediaRecorder && mediaRecorder.state === "recording" && recordingCueIndex === idxAtCall;
+    recStartBtn.disabled = recording;
+    recStopBtn.disabled = !recording;
+    recordRowEl.classList.toggle("recording", recording);
+
+    if (recording){
+      recordStatusEl.textContent = "録音中…";
+      recordStatusEl.classList.remove("has-audio");
+      recShareBtn.disabled = true; recDeleteBtn.disabled = true;
+      return;
+    }
+
+    recShareBtn.disabled = true; recDeleteBtn.disabled = true;
+    recordStatusEl.classList.remove("has-audio");
+    recordStatusEl.textContent = "確認中…";
+
+    loadRecording(idxAtCall).then(function(rec){
+      if (state.idx !== idxAtCall) return; // stale response, line already changed
+      if (rec){
+        recordStatusEl.textContent = "🔊 録音あり（クリックで試聴）";
+        recordStatusEl.classList.add("has-audio");
+        recShareBtn.disabled = false;
+        recDeleteBtn.disabled = false;
+        return;
+      }
+      fetchSharedRecording(idxAtCall).then(function(blob){
+        if (state.idx !== idxAtCall) return;
+        if (blob){
+          recordStatusEl.textContent = "☁️ 共有録音あり（クリックで試聴）";
+          recordStatusEl.classList.add("has-audio");
+        } else {
+          recordStatusEl.textContent = "未録音";
+          recordStatusEl.classList.remove("has-audio");
+        }
+      });
+    }).catch(function(){
+      if (state.idx === idxAtCall) recordStatusEl.textContent = "未録音";
+    });
+  }
+
+  recStartBtn.addEventListener("click", startRecording);
+  recStopBtn.addEventListener("click", stopRecording);
+  recShareBtn.addEventListener("click", function(){ downloadRecordingForSharing(state.idx); });
+  recDeleteBtn.addEventListener("click", function(){
+    var idx = state.idx;
+    deleteRecording(idx).then(updateRecordUI);
+  });
+  recordStatusEl.addEventListener("click", function(){
+    if (!recordStatusEl.classList.contains("has-audio")) return;
+    var idx = state.idx;
+    loadRecording(idx).then(function(rec){
+      if (rec && rec.blob){ playBlob(rec.blob); return; }
+      fetchSharedRecording(idx).then(function(blob){ if (blob) playBlob(blob); });
+    });
+  });
+
+  /* ---------------- playback (shared recording → local recording → TTS) ---------------- */
+  var currentPlaybackAudio = null;
+
+  function playBlob(blob, onend){
+    var url = URL.createObjectURL(blob);
+    var audio = new Audio(url);
+    currentPlaybackAudio = audio;
+    audio.onended = function(){ URL.revokeObjectURL(url); if (currentPlaybackAudio === audio) currentPlaybackAudio = null; onend && onend(); };
+    audio.onerror = function(){ URL.revokeObjectURL(url); if (currentPlaybackAudio === audio) currentPlaybackAudio = null; onend && onend(); };
+    audio.play().catch(function(){ URL.revokeObjectURL(url); if (currentPlaybackAudio === audio) currentPlaybackAudio = null; onend && onend(); });
+  }
+
+  async function speakOrPlayback(cueIndex, cue, onend){
+    var blob = null;
+    try { blob = await fetchSharedRecording(cueIndex); } catch (e){ /* ignore */ }
+    if (!blob){
+      try {
+        var rec = await loadRecording(cueIndex);
+        if (rec) blob = rec.blob;
+      } catch (e){ /* ignore */ }
+    }
+    if (blob) playBlob(blob, onend);
+    else speak(cue.text, cue.character, onend);
+  }
+
+  function cancelSpeech(){
+    if (synthAvailable) speechSynthesis.cancel();
+    if (currentPlaybackAudio){ currentPlaybackAudio.pause(); currentPlaybackAudio = null; }
+    abortActiveRecording();
+  }
 
   /* ---------------- setup UI ---------------- */
   var soloGrid = document.getElementById("solo-role-grid");
@@ -1121,6 +1397,7 @@
     setStatus("idle","準備完了");
     nextBtn.textContent = "はじめる";
     nextBtn.disabled = false; backBtn.disabled = true;
+    updateRecordUI();
   });
 
   function resetLog(){
@@ -1289,9 +1566,11 @@
     updateProgress();
     renderPreviewBlock();
     scrollToCurrent();
+    updateRecordUI();
 
     var speakThis = currentCueShouldSpeak(cue);
     var isUserLine = currentCueIsUserLine(cue);
+    var thisIdx = state.idx;
 
     if (state.mode === "solo"){
       if (isUserLine){
@@ -1304,7 +1583,7 @@
         currentRow.classList.add("speaking");
         setStatus("speaking","読み上げ中…");
         nextBtn.disabled = true; backBtn.disabled = true;
-        speak(cue.text, cue.character, function(){
+        speakOrPlayback(thisIdx, cue, function(){
           setStatus("idle","準備完了");
           revealNext();
         });
@@ -1322,7 +1601,7 @@
         currentRow.classList.add("speaking");
         setStatus("speaking","代役で読み上げ中…");
         nextBtn.disabled = true; backBtn.disabled = true;
-        speak(cue.text, cue.character, function(){
+        speakOrPlayback(thisIdx, cue, function(){
           setStatus("idle","準備完了（現場で読んでください）");
           nextBtn.disabled = false; backBtn.disabled = state.idx === 0;
         });
@@ -1360,6 +1639,7 @@
       setStatus("idle","準備完了");
       nextBtn.textContent = "はじめる"; nextBtn.className = "btn primary";
       nextBtn.disabled = false; backBtn.disabled = true;
+      updateRecordUI();
       return;
     }
 
@@ -1381,6 +1661,7 @@
     backBtn.disabled = state.idx <= 0;
     renderPreviewBlock();
     scrollToCurrent();
+    updateRecordUI();
   }
 
   function showEnd(){
@@ -1393,9 +1674,13 @@
     setStatus("idle","終了");
     nextBtn.disabled = true; backBtn.disabled = state.idx <= 0;
     nextBtn.textContent = "終了";
+    updateRecordUI();
   }
 
   nextBtn.addEventListener("click", function(){
+    if (mediaRecorder && mediaRecorder.state === "recording"){
+      stopRecording();
+    }
     if (state.mode === "solo" && CUES[state.idx] && currentCueIsUserLine(CUES[state.idx])){
       markRowDone(currentRow);
     }
