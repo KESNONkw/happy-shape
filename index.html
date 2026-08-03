@@ -1,0 +1,1342 @@
+<title>「幸せのカタチ」本読みアシスタント</title>
+<style>
+  :root{
+    --bg:#eceee7;
+    --surface:#ffffff;
+    --surface-2:#f4f2ec;
+    --ink:#23262b;
+    --ink-dim:#6b6f76;
+    --border:#d8d5cb;
+    --accent:#a86526;
+    --accent-soft:#f1e0c8;
+    --accent-2:#276e6e;
+    --accent-2-soft:#dcecec;
+    --danger:#a83d37;
+    --radius:12px;
+    --serif:"Yu Mincho","YuMincho","Hiragino Mincho ProN","Noto Serif JP",serif;
+    --sans:"Yu Gothic","YuGothic","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    --mono:ui-monospace,"SF Mono","Cascadia Code","Menlo",monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#15171b;
+      --surface:#1c1f24;
+      --surface-2:#22262c;
+      --ink:#eae7e0;
+      --ink-dim:#9a9da4;
+      --border:#33373d;
+      --accent:#e0a542;
+      --accent-soft:#3a2c14;
+      --accent-2:#5fb8b8;
+      --accent-2-soft:#173232;
+      --danger:#e2827c;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#15171b; --surface:#1c1f24; --surface-2:#22262c; --ink:#eae7e0; --ink-dim:#9a9da4;
+    --border:#33373d; --accent:#e0a542; --accent-soft:#3a2c14; --accent-2:#5fb8b8; --accent-2-soft:#173232; --danger:#e2827c;
+  }
+  :root[data-theme="light"]{
+    --bg:#eceee7; --surface:#ffffff; --surface-2:#f4f2ec; --ink:#23262b; --ink-dim:#6b6f76;
+    --border:#d8d5cb; --accent:#a86526; --accent-soft:#f1e0c8; --accent-2:#276e6e; --accent-2-soft:#dcecec; --danger:#a83d37;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans);
+    display:flex; flex-direction:column; min-height:100vh;
+  }
+  ::selection{ background:var(--accent-soft); }
+
+  /* ---------- header ---------- */
+  header{
+    display:flex; align-items:center; gap:.75rem;
+    padding:.7rem 1rem; border-bottom:1px solid var(--border);
+    background:var(--surface); position:sticky; top:0; z-index:20;
+  }
+  .glow{
+    width:10px; height:10px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #fff8, var(--accent) 70%);
+    box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+    flex:none;
+  }
+  .glow.live{ animation:pulse 1.6s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce){ .glow.live{ animation:none; } }
+  @keyframes pulse{ 0%,100%{ opacity:1; } 50%{ opacity:.45; } }
+
+  .titles{ display:flex; flex-direction:column; line-height:1.15; min-width:0; }
+  .titles .play{ font-family:var(--serif); font-size:1rem; font-weight:600; letter-spacing:.02em; }
+  .titles .sub{ font-size:.68rem; color:var(--ink-dim); letter-spacing:.08em; text-transform:uppercase; }
+
+  .hdr-scene{
+    margin-left:auto; display:flex; align-items:center; gap:.4rem;
+    font-size:.78rem; color:var(--ink-dim);
+  }
+  select, button{ font-family:var(--sans); }
+  select{
+    background:var(--surface-2); color:var(--ink); border:1px solid var(--border);
+    border-radius:8px; padding:.35rem .5rem; font-size:.78rem; max-width:11rem;
+  }
+  .icon-btn{
+    border:1px solid var(--border); background:var(--surface-2); color:var(--ink);
+    border-radius:8px; width:2.1rem; height:2.1rem; display:grid; place-items:center;
+    cursor:pointer; font-size:1rem; flex:none;
+  }
+  .icon-btn:hover{ border-color:var(--accent); }
+  .icon-btn:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible{
+    outline:2px solid var(--accent-2); outline-offset:2px;
+  }
+
+  /* ---------- setup screen ---------- */
+  #setup{
+    max-width:640px; margin:0 auto; padding:1.5rem 1.25rem 2rem; width:100%;
+  }
+  .lead{ font-family:var(--serif); font-size:1.05rem; line-height:1.9; margin:.2rem 0 1.6rem; }
+  .lead strong{ color:var(--accent); font-weight:600; }
+
+  fieldset{ border:none; margin:0 0 1.6rem; padding:0; }
+  legend{
+    font-size:.72rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-dim);
+    margin-bottom:.6rem; padding:0;
+  }
+  .mode-grid{ display:grid; grid-template-columns:1fr 1fr; gap:.7rem; }
+  @media (max-width:520px){ .mode-grid{ grid-template-columns:1fr; } }
+  .mode-card{
+    border:1px solid var(--border); border-radius:var(--radius); background:var(--surface);
+    padding:.9rem 1rem; cursor:pointer; text-align:left; display:flex; flex-direction:column; gap:.3rem;
+  }
+  .mode-card b{ font-size:.92rem; }
+  .mode-card span{ font-size:.78rem; color:var(--ink-dim); line-height:1.5; }
+  .mode-card[aria-pressed="true"]{
+    border-color:var(--accent); background:var(--accent-soft);
+    box-shadow:0 0 0 1px var(--accent) inset;
+  }
+
+  .role-grid{ display:flex; flex-wrap:wrap; gap:.5rem; }
+  .role-chip{
+    border:1px solid var(--border); background:var(--surface); color:var(--ink);
+    border-radius:999px; padding:.4rem .95rem; font-size:.85rem; cursor:pointer;
+    display:flex; align-items:center; gap:.4rem;
+  }
+  .role-chip .dot{ width:.55rem; height:.55rem; border-radius:50%; flex:none; }
+  .role-chip[aria-pressed="true"]{
+    border-color:var(--chip-color, var(--accent)); background:var(--chip-bg, var(--accent-soft));
+    font-weight:600;
+  }
+  .hint{ font-size:.76rem; color:var(--ink-dim); margin-top:.5rem; }
+
+  .start-btn{
+    width:100%; padding:.9rem 1rem; border:none; border-radius:var(--radius);
+    background:var(--accent); color:#1a1200; font-weight:700; font-size:.95rem;
+    cursor:pointer; letter-spacing:.02em;
+  }
+  .start-btn:disabled{ opacity:.45; cursor:not-allowed; }
+
+  /* ---------- main stage / log ---------- */
+  main{ flex:1; overflow-y:auto; padding:1rem 1rem 6.5rem; }
+  #stage{
+    max-width:680px; margin:0 auto;
+    background-image:
+      repeating-linear-gradient(to bottom, transparent, transparent 27px, color-mix(in srgb, var(--ink) 4%, transparent) 28px);
+  }
+  .row{ padding:.45rem .2rem; }
+  .row.scene-div{
+    display:flex; align-items:center; gap:.7rem; margin:1.1rem 0 .5rem; color:var(--ink-dim);
+    font-size:.72rem; letter-spacing:.12em; text-transform:uppercase;
+  }
+  .row.scene-div::before, .row.scene-div::after{ content:""; flex:1; height:1px; background:var(--border); }
+
+  .row.direction{ text-align:center; font-size:.82rem; color:var(--ink-dim); font-style:italic; padding:.5rem 1rem; }
+  .row.note{ text-align:center; font-size:.75rem; color:var(--ink-dim); border:1px dashed var(--border); border-radius:8px; padding:.3rem .6rem; margin:.3rem auto; max-width:20rem; }
+
+  .row.line{ display:flex; gap:.75rem; align-items:flex-start; padding:.55rem .5rem; border-radius:var(--radius); }
+  .who{
+    flex:none; width:4.4rem; text-align:right; font-size:.78rem; font-weight:700; padding-top:.15rem;
+    color:var(--chip-color, var(--ink));
+  }
+  .say{ font-family:var(--serif); font-size:1.02rem; line-height:1.85; }
+  .say .beat{ color:var(--ink-dim); font-style:italic; font-size:.92em; }
+  .row.line.done{ opacity:.55; }
+  .row.line.current{ background:var(--surface); border:1px solid var(--border); box-shadow:0 1px 3px color-mix(in srgb, var(--ink) 8%, transparent); }
+  .row.line.current.speaking{ border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset; }
+  .row.line.current.your-turn{ border-color:var(--accent-2); box-shadow:0 0 0 1px var(--accent-2) inset; }
+  .tag{
+    display:inline-block; font-size:.62rem; letter-spacing:.08em; text-transform:uppercase;
+    border-radius:999px; padding:.1rem .5rem; margin-left:.5rem; vertical-align:middle;
+  }
+  .tag.speaking{ background:var(--accent-soft); color:var(--accent); }
+  .tag.you{ background:var(--accent-2-soft); color:var(--accent-2); }
+
+  #end-card{
+    text-align:center; padding:2.2rem 1rem; color:var(--ink-dim); font-family:var(--serif); font-size:.95rem;
+  }
+
+  /* ---------- footer controls ---------- */
+  footer{
+    position:sticky; bottom:0; background:var(--surface); border-top:1px solid var(--border);
+    padding:.6rem .8rem; display:flex; flex-direction:column; gap:.5rem; z-index:20;
+  }
+  .status-line{ display:flex; align-items:center; gap:.5rem; font-size:.78rem; color:var(--ink-dim); min-height:1.1rem; }
+  .status-pill{
+    display:inline-flex; align-items:center; gap:.35rem; font-size:.72rem; padding:.15rem .55rem; border-radius:999px;
+    background:var(--surface-2); border:1px solid var(--border);
+  }
+  .status-pill.speaking{ color:var(--accent); border-color:var(--accent); }
+  .status-pill.you{ color:var(--accent-2); border-color:var(--accent-2); }
+
+  .ctrl-row{ display:flex; gap:.5rem; align-items:stretch; }
+  .btn{
+    border:1px solid var(--border); background:var(--surface-2); color:var(--ink);
+    border-radius:10px; padding:.7rem .9rem; font-size:.85rem; cursor:pointer;
+  }
+  .btn:disabled{ opacity:.4; cursor:not-allowed; }
+  .btn.primary{
+    flex:1; background:var(--accent); border-color:var(--accent); color:#201502; font-weight:700; font-size:.95rem;
+  }
+  .btn.primary.wait-you{ background:var(--accent-2); border-color:var(--accent-2); }
+  .btn.ghost{ background:transparent; }
+
+  /* ---------- settings drawer ---------- */
+  #overlay{ position:fixed; inset:0; background:color-mix(in srgb, #000 45%, transparent); z-index:29; display:none; }
+  #overlay.open{ display:block; }
+  #drawer{
+    position:fixed; right:0; top:0; bottom:0; width:min(360px,92vw); background:var(--surface);
+    border-left:1px solid var(--border); z-index:30; transform:translateX(100%); transition:transform .25s ease;
+    overflow-y:auto; padding:1rem;
+  }
+  @media (prefers-reduced-motion: reduce){ #drawer{ transition:none; } }
+  #drawer.open{ transform:translateX(0); }
+  #drawer h3{ font-size:.9rem; margin:0 0 .8rem; }
+  .drawer-section{ margin-bottom:1.3rem; }
+  .drawer-section h4{ font-size:.72rem; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-dim); margin:0 0 .5rem; }
+  .toggle-row{ display:flex; align-items:center; justify-content:space-between; gap:.5rem; padding:.3rem 0; font-size:.85rem; }
+  .voice-row{ display:flex; align-items:center; gap:.5rem; padding:.3rem 0; font-size:.8rem; }
+  .voice-row .who-label{ width:3.6rem; flex:none; font-weight:600; }
+  .voice-row select{ flex:1; }
+  input[type="range"]{ width:100%; }
+  .rate-value{ font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:.78rem; color:var(--ink-dim); }
+
+  .visually-hidden{
+    position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap;
+  }
+
+  .warn-banner{
+    background:var(--accent-soft); color:var(--accent); border:1px solid var(--accent);
+    border-radius:8px; padding:.6rem .8rem; font-size:.8rem; margin-bottom:1.2rem;
+  }
+</style>
+
+<header>
+  <span class="glow" id="glow-dot"></span>
+  <div class="titles">
+    <span class="play">「幸せのカタチ」本読みアシスタント</span>
+    <span class="sub">Rehearsal reading assistant</span>
+  </div>
+  <div class="hdr-scene">
+    <label class="visually-hidden" for="scene-jump">場面へ移動</label>
+    <select id="scene-jump"></select>
+    <button class="icon-btn" id="open-settings" title="設定" aria-label="設定">⚙</button>
+  </div>
+</header>
+
+<main>
+  <section id="setup">
+    <p class="lead">台本の全セリフを読み込み済みです。<strong>個人練習</strong>では自分の役以外を、<strong>欠席者の代役</strong>では休んでいる役だけを、システムが声で読み上げます。</p>
+
+    <fieldset>
+      <legend>モードを選ぶ</legend>
+      <div class="mode-grid" id="mode-grid">
+        <button type="button" class="mode-card" data-mode="solo" aria-pressed="true">
+          <b>個人練習</b>
+          <span>自分の役だけ自分で読む。それ以外は自動で読み上げ、あなたの番で待ちます。</span>
+        </button>
+        <button type="button" class="mode-card" data-mode="missing" aria-pressed="false">
+          <b>欠席者の代役</b>
+          <span>その場にいない役だけ読み上げます。他の役は集まったキャストがいつも通り読みます。</span>
+        </button>
+      </div>
+    </fieldset>
+
+    <fieldset id="solo-fields">
+      <legend>自分の役は？</legend>
+      <div class="role-grid" id="solo-role-grid"></div>
+      <p class="hint">選んだ役のセリフは読み上げず、あなたが読み終えたら「次へ」を押してください。</p>
+    </fieldset>
+
+    <fieldset id="missing-fields" style="display:none;">
+      <legend>今日いない役を選ぶ（複数可）</legend>
+      <div class="role-grid" id="missing-role-grid"></div>
+      <p class="hint">選んだ役のセリフだけ自動で読み上げます。それ以外は表示のみ。1行ごとに「次へ」を押して進めます。</p>
+    </fieldset>
+
+    <p class="warn-banner" id="tts-warning" style="display:none;">お使いのブラウザは音声読み上げ（Web Speech API）に対応していません。文字表示のみで進行します。</p>
+
+    <button class="start-btn" id="start-btn" disabled>稽古をはじめる</button>
+  </section>
+
+  <section id="stage" style="display:none;"></section>
+</main>
+
+<footer id="footer" style="display:none;">
+  <div class="status-line">
+    <span class="status-pill" id="status-pill">準備完了</span>
+    <span id="progress-label" style="margin-left:auto; font-family:var(--mono); font-variant-numeric:tabular-nums;"></span>
+  </div>
+  <div class="ctrl-row">
+    <button class="btn ghost" id="back-btn" title="一つ戻る">◀ 戻る</button>
+    <button class="btn primary" id="next-btn">はじめる</button>
+    <button class="btn ghost" id="restart-btn" title="最初から">⟲ 最初から</button>
+  </div>
+</footer>
+
+<div id="overlay"></div>
+<aside id="drawer" aria-label="設定">
+  <h3>設定</h3>
+
+  <div class="drawer-section">
+    <h4>読み上げの速さ</h4>
+    <input type="range" id="rate-slider" min="0.6" max="1.6" step="0.05" value="1">
+    <div class="rate-value" id="rate-value">1.00×</div>
+  </div>
+
+  <div class="drawer-section">
+    <div class="toggle-row">
+      <span>ト書き・効果音も読み上げる</span>
+      <input type="checkbox" id="voice-directions-toggle">
+    </div>
+  </div>
+
+  <div class="drawer-section">
+    <h4>役ごとの声</h4>
+    <div id="voice-assign-list"></div>
+  </div>
+</aside>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------------- script data ---------------- */
+  // cue tuple: [type, character-or-null, text]  type: L=line, D=direction, S=sound, N=note
+  var SCENES = [
+  { title:"♯0　幸せのかたち", cues:[
+    ["D",null,"セットは真ん中で分けられた二部屋。右側が知恵の部屋。左側はリビング。スポットライトが知恵に当たっている。知恵は制服姿で座っており、模試を受けている。"],
+    ["S",null,"音声　よーいはじめ"],
+    ["D",null,"知恵、問題用紙を開く。"],
+    ["L","知恵","あなたにとって幸せとは何ですか？根拠を二つ以上上げ、600字で書きなさい。"],
+    ["L","知恵","（悩みながら）そんなのわかってたら苦労しないっての"],
+    ["D",null,"暗転。"]
+  ]},
+  { title:"♯1　とある日の夕暮れ", cues:[
+    ["D",null,"地明かりFI　ステージ上には母が晩御飯の準備をしている。父は椅子に座り、本を読んでいる。"],
+    ["S",null,"夕暮れの音楽FI"],
+    ["L","母","ごはん、できたよ"],
+    ["L","父","ありがとう、今日もおいしそうだな"],
+    ["L","母","ありがとう"],
+    ["L","父","学は？"],
+    ["L","母","またゲームでもやってるんじゃない？"],
+    ["L","父","… 今日は学校に行ったのか？"],
+    ["L","母","いいえ"],
+    ["L","父","… そうか"],
+    ["L","母","あとで瓜生先生がプリント持ってきてくれるって"],
+    ["L","父","いつも申し訳ないな、いそがしいだろうに"],
+    ["L","母","そうね、（上手に向かって）学、学！"],
+    ["S",null,"扉が開く音、FI"],
+    ["L","学","（上手から）なに！"],
+    ["L","母","ご飯できたよ"],
+    ["L","学","今ゲームしてるから"],
+    ["L","母","でも、ごはん冷めちゃうよ"],
+    ["L","学","いらない"],
+    ["S",null,"扉が閉まる音、FI"],
+    ["L","母","まったく"],
+    ["L","父","どうしたものか"],
+    ["D",null,"しばらく沈黙。"],
+    ["L","父","そういえば知恵は？"],
+    ["L","母","今日は大事な模試があるみたいだよ"],
+    ["L","父","そうなのか、そんなことなにも言ってなかった"],
+    ["L","母","そりゃそうよ"],
+    ["L","父","午後ティー用意しておかないと"],
+    ["L","母","何歳だと思ってるの、もうそんなのでつられないよ"],
+    ["L","父","いいんだよ、これは俺なりの気持ちだから"],
+    ["L","母","素直に言えばいいのに"],
+    ["L","父","だってほとんど口もきいてくれないんだから仕方ないだろ"],
+    ["L","母","はいはい"],
+    ["L","父","知恵も小さいときは可愛げがあったのにな…「パパと絶対結婚する！」って"],
+    ["L","母","もう高校生だよ？そんなこと言うわけないでしょ"],
+    ["L","父","それはそうだけどさ…"],
+    ["L","母","あなたがそんなスタンスだから知恵に嫌われるのよ"],
+    ["L","父","… そんなこというなよ"],
+    ["L","母","もう少し話聞いてあげたら？知恵だって考えてることもあるんだろうし"],
+    ["L","父","なにをしたらいいんだ？"],
+    ["L","母","それは自分で考えて"],
+    ["L","父","ええ…"],
+    ["D",null,"知恵が入ってくる。"],
+    ["L","知恵","ただいま"],
+    ["L","母","おかえり"],
+    ["L","父","おかえり"],
+    ["L","母","ごはんできてるよ"],
+    ["L","知恵","うん、後で食べる"],
+    ["L","母","でも冷めちゃうよ"],
+    ["L","知恵","模試で疲れたの、一回休ませて"],
+    ["L","父","知恵"],
+    ["L","知恵","（無視）"],
+    ["L","父","知恵"],
+    ["L","知恵","なに？うるさいな"],
+    ["L","父","模試の結果はどうだったんだ？"],
+    ["L","知恵","別に"],
+    ["L","父","別にってなんだ"],
+    ["L","知恵","パパに関係ないでしょ"],
+    ["L","父","関係あるに決まってるだろ。前の模試だって散々だったじゃないか"],
+    ["L","知恵","だからなに？私の問題でしょ"],
+    ["L","父","だからなに？じゃない！もう志望校は決めたのか？"],
+    ["L","知恵","そのうち決める！てか、いちいち口出ししないでって言ってんの！"],
+    ["L","父","最近勉強している様子もないし、結果も下がってるんだぞ？このままで本当に大丈夫なのか？"],
+    ["L","知恵","うるさいな… わかってるよそんなこと"],
+    ["L","父","わかってるならなんで改善しないんだ"],
+    ["L","知恵","知らないよ、もういいでしょ"],
+    ["L","父","もういいじゃない！ちゃんと話せ！"],
+    ["L","知恵","話したくないの、口を開けば説教ばっかり。正論ばっかり言ってさ"],
+    ["L","父","正論だろうと言わなきゃいけないことはある。知恵の進路のことだぞ"],
+    ["L","知恵","もういい！"],
+    ["L","父","おい！"],
+    ["D",null,"知恵、自分の部屋に移動する。ドアが開く音・ドアが閉まる音FI"],
+    ["L","父","（溜息）"],
+    ["L","母","強く言いすぎ"],
+    ["L","父","そんなことない、俺は知恵のことを思って"],
+    ["L","母","そういうところが知恵のこと考えてないって言ってるの"],
+    ["L","父","でも…"],
+    ["L","母","ご飯にしましょう"],
+    ["L","父","… ああ"],
+    ["D",null,"照明変化　知恵は荷物を置いて、机に向かう。しばらく勉強しようとするが集中できず、そのまま倒れこむ。"],
+    ["L","知恵","ああ！マジでイライラする"],
+    ["S",null,"ラインの着信音FI　友達と電話しているテンポ感で。"],
+    ["L","友達","（もしもし？どしたん？）"],
+    ["L","知恵","…… マジで最悪。"],
+    ["L","友達","（またお父さん？）"],
+    ["L","知恵","そう。模試の結果でめっちゃ説教された。『このままで大丈夫なのか』とか『志望校に行く気あるのか』とか、いちいちうるさいんだよね。"],
+    ["L","友達","（あー、親ってほんとそういうの言うよね。こっちが一番分かってんのにさ。）"],
+    ["L","知恵","マジでそれ。言われなくても焦ってるっつーの。なのに、グチグチ言われると余計やる気なくすんだよね。"],
+    ["L","友達","（しかもさ、親ってこっちがイライラしててもお構いなしに正論ぶつけてくるじゃん？）"],
+    ["L","知恵","そうそう！それでこっちがムッとしたら『態度が悪い』とか言われてさ。じゃあどうすればいいんだよって感じ。"],
+    ["L","友達","（結局、親の言うことに従わないとキレられるんだよね。めんどくさ。）"],
+    ["L","知恵","ほんとそれ。まぁ、しばらく口きかないでおこうかな。"],
+    ["L","友達","（いいんじゃない？放っとけば向こうも諦めるっしょ。）"],
+    ["L","知恵","だよねー。…… はぁ、でももう考えるのもだるいから話題変えていい？"],
+    ["L","友達","（もちろん！じゃあさ、最近塾どう？）"],
+    ["L","知恵","あー、塾ね。まぁ普通…… って言いたいけど、この前めっちゃ笑ったことあったわ。"],
+    ["L","友達","（なになに？）"],
+    ["L","知恵","あの先生いるじゃん？あのちょっと天然っぽい人。"],
+    ["L","友達","（あー、〇〇先生？）"],
+    ["L","知恵","そう！この前、その先生がホワイトボードにめっちゃ難しい問題書いて『これ解けるかな〜？』ってドヤ顔で言ったんだけど、板書ミスってて答えが思いっきり間違ってたの。"],
+    ["L","友達","（え、やば（笑））"],
+    ["L","知恵","で、生徒が『先生、これ違いません？』って言ったら、先生が一瞬固まって『…… うん、そうだね、これは間違いだね！』って急にめっちゃ爽やかに認めてさ（笑）"],
+    ["L","友達","（素直に認めるのウケる（笑））"],
+    ["L","知恵","しかも『みんな、間違いを恐れずに！先生みたいに堂々と間違えよう！』とか言い出して、クラス全員笑ってた。"],
+    ["L","友達","（ポジティブすぎる（笑））"],
+    ["L","知恵","ね！でも、なんかあの先生って憎めないんだよね。"],
+    ["L","友達","（わかるわかる。あの先生の授業って、面白いし、なんかいいよね。）"],
+    ["L","知恵","うん。授業中はまぁ普通に疲れるけど、たまにああいうのあるとちょっと気が楽になる。"],
+    ["L","友達","（じゃあ、次の授業もまたなんか面白いこと起きるかもね。）"],
+    ["L","知恵","かもね。…… なんか、ちょっと気分晴れてきた。"],
+    ["L","友達","（でしょ？だったらさ、これからお出かけしよ！気持ちも晴れるかもしれないし！）"],
+    ["D",null,"学、上手側から顔を出す。"],
+    ["L","学","姉ちゃん"],
+    ["L","知恵","それいいね！どこ行く？"],
+    ["L","学","姉ちゃん"],
+    ["L","知恵","ちょっと待って、（学の方を向いて）なに？"],
+    ["L","学","さっきからうるさい"],
+    ["L","知恵","そんなことないでしょ"],
+    ["L","学","こっちはゲームやってんの。邪魔しないで"],
+    ["L","知恵","そんなの知らないよ、私だって電話してんの。邪魔しないで"],
+    ["L","学","マジでうざい"],
+    ["D",null,"学、はける"],
+    ["L","知恵","ごめんね、どこ行く？"],
+    ["L","友達","（買い物行こうよ、私買いたいものあってさ）"],
+    ["L","知恵","いいね、集合はいつものカフェでいい？"],
+    ["L","友達","（うん）"],
+    ["L","知恵","わかった、あとでね"],
+    ["D",null,"知恵、電話を切り準備を始める。準備が終わると出かけようとする。"],
+    ["L","父","知恵"],
+    ["L","知恵","（無視）"],
+    ["L","父","知恵！"],
+    ["L","母","（父を制して）どこ行くの？"],
+    ["L","知恵","どこでもいいでしょ"],
+    ["D",null,"知恵、家を出ていく。"],
+    ["L","父","まったく…"],
+    ["S",null,"チャイム音FI"],
+    ["L","母","はーい"],
+    ["S",null,"ドアが開く音FI"],
+    ["L","先生","失礼します、函館中学校の瓜生です"],
+    ["L","母","あ、先生すみません、わざわざ"],
+    ["L","先生","いえいえ"],
+    ["L","父","先生、ありがとうございます"],
+    ["L","先生","今日はお父様もいらっしゃっるんですね、でしたらちょうどよかったです。"],
+    ["L","父","というと？"],
+    ["L","先生","今日は学さんのことでご相談があったんです。"],
+    ["L","父","それはどんな"],
+    ["L","先生","それは…"]
+  ]},
+  { title:"♯2　お金のない友達", cues:[
+    ["D",null,"照明変化。スポットライトで中央を照らす。知恵が一人で歩いていると永遠がバイトをしている。"],
+    ["L","知恵","あれ？永遠？こんなところで何してるの？"],
+    ["L","永遠","えっ！？あ、知恵！びっくりした〜！（笑）ちょっとね"],
+    ["L","知恵","え、なに隠してるのさ！"],
+    ["L","永遠","べ、別に"],
+    ["L","知恵","えいっ… ！これ、新聞？"],
+    ["L","永遠","あ、ばれたらしょうがないか… 今バイト中… 。"],
+    ["L","知恵","え、バイト！邪魔してごめん"],
+    ["L","永遠","ううん、大丈夫"],
+    ["L","知恵","バイトしてたんだ！？初耳なんだけど！"],
+    ["L","永遠","まぁ、最近始めたばっかりだからね〜（苦笑）。"],
+    ["L","知恵","えー！でもなんで急に？"],
+    ["L","永遠","うん… 。ちょっとお小遣い欲しくてさ〜（笑）。欲しいものいっぱいあるし… 。"],
+    ["L","知恵","そっか〜。でも新聞配達って大変そうじゃない？夕方でも、結構人も車も多いし… 。"],
+    ["L","永遠","まあね〜。でも朝よりはマシかなって。朝は早起き無理だし（笑）。"],
+    ["L","知恵","それはわかる（笑）。でも学校帰りで疲れてるときにバイトって大変でしょ。"],
+    ["L","永遠","うーん… まぁ慣れれば平気だよ！まだちょっと失敗も多いけど… （苦笑）。"],
+    ["L","知恵","そっか〜無理しすぎないでね？結構頑張りすぎるタイプだからさ。"],
+    ["L","永遠","え、そんなことないよ（笑）。でもありがとね！"],
+    ["L","知恵","うん！じゃあ、そろそろ行くね。"],
+    ["L","永遠","うん！また明日学校で"],
+    ["D",null,"知恵、走ってはけていく。永遠は笑顔で手を振る。"],
+    ["L","永遠","あと少し、頑張らないと"],
+    ["S",null,"着信音、FI"],
+    ["L","永遠","あ、もしもし？どうしたの？うん、今バイトしてるよ。もうすぐ帰るから。謝らないでよ、私だって楽しくてやってるところもあるんだから。うん、またあとでね。"]
+  ]},
+  { title:"♯3　学の成長", cues:[
+    ["D",null,"照明変化。地明かりFI。"],
+    ["L","先生","学くんのことですが、登校支援室の利用を考えてみませんか？いきなり教室復帰は難しくても、まずは学校に来る習慣をつけるのが大事だと思うんです"],
+    ["L","母","登校支援室…… ですか？"],
+    ["L","先生","はい。教室とは別の部屋で、少人数で過ごせますし、教員も常駐しています。最初は週に一回、短時間からでも大丈夫です"],
+    ["L","母","…… なるほど。でも、本人がどう思うかですよね"],
+    ["L","父","（腕を組みながら）行けるならとっくに行ってると思いますけどね。そんな中途半端なことして、余計に学校行けなくなるんじゃ……"],
+    ["L","先生","無理に通常の教室に戻すより、段階を踏んで慣れさせるほうが効果的だと思います"],
+    ["L","父","そうやって、本人に逃げ道を作るから、本人はいつまでも課題に向き合わないんじゃないですか？"],
+    ["L","先生","そんなことないと思いますよ"],
+    ["L","父","実際、先生が家に来てくれるようになってから、学は全く学校に行かなくなりました。今までは月に1度は行っていたのに"],
+    ["L","先生","それは…"],
+    ["L","母","あなた、それは失礼よ"],
+    ["L","父","でも事実じゃないか。だからまた逃げ道を作るのはどうかと思うんです。"],
+    ["L","先生","時には逃げ道が必要なこともあるんです、学くんには今それが必要な時期かと思います。"],
+    ["L","母","…… そうですよね"],
+    ["L","父","でも結局は本人次第だろ？どうせ“行きたくない”って言うに決まって"],
+    ["L","先生","まずは本人の考えを聞いてみましょうか"],
+    ["D",null,"母が立ち上がり、ためらいながら息子の部屋へ向かう。母はドアの前で深呼吸し、静かにノックする。"],
+    ["L","母","学、先生が来てるの。少しだけ話せない？"],
+    ["L","学","…… なんで？"],
+    ["L","母","登校支援室のこと、一緒に考えたいの"],
+    ["L","学","…… 行かない"],
+    ["L","母","決めつけないで。とりあえず話だけでも…… ね？"],
+    ["L","学","…… わかったよ"],
+    ["D",null,"リビングに入った学は、少しうつむきながら座る。"],
+    ["L","先生","学くん、来てくれてありがとう。無理に決めろとは言わないよ。ただ、登校支援室っていう選択肢があることは知っておいてほしいんだ"],
+    ["L","学","…… 別にいいし"],
+    ["L","母","でも、家にいるよりは……"],
+    ["L","学","だから、それがいいんだって！"],
+    ["L","父","お前なぁ…… いつまでそんな生活続けるつもりだ？"],
+    ["L","学","知らない！"],
+    ["L","母","落ち着いて！余計に話せなくなるじゃない！"],
+    ["L","父","話せなくなる？いやいや、そもそもこいつが何も話さないんだろ！"],
+    ["L","学","話したくないし！！"],
+    ["L","先生","学くん、少しずつでもいいんだ。無理に行けとは言わないよ。でも、外に出ることから……"],
+    ["L","学","うるさい！！もういい！！"],
+    ["D",null,"学が立ち上がろうとする。"],
+    ["L","父","待て！！"],
+    ["L","学","嫌だって言ってんだろ！！ほっといてよ！！"],
+    ["L","母","もうやめて！！"],
+    ["L","学","…… 誰も俺の気持ちをわかってくれないんだ！！"],
+    ["D",null,"学、そのまま部屋へ戻り、ドアを強く閉める。ドアの開閉音FI"],
+    ["L","先生","…… すみません、無理に話を進めすぎましたね"],
+    ["L","母","いえ……"],
+    ["L","父","はぁ…… もうどうしたらいいんだよ……"],
+    ["L","先生","今日はひとまずここまでにしましょう。また改めて考えていきましょう"],
+    ["L","母","そうですね"],
+    ["L","先生","では、私はこれで"],
+    ["L","母","ありがとうございました"],
+    ["D",null,"先生、はける"],
+    ["D",null,"沈黙が続く。"],
+    ["L","母","焦っても仕方ないじゃない"],
+    ["L","父","でもあいつももう中学生なんだ、早くしないと入試も始まってしまう"],
+    ["L","母","それはそうだけど"],
+    ["L","父","知恵も失敗して学も失敗したらおれはどうしたらいいんだ"],
+    ["L","母","まだ、失敗したとは決まってないじゃない"],
+    ["L","父","でも、今のままじゃうまくいくわけないだろ！"],
+    ["L","母","… それは"],
+    ["L","父","… 俺の育て方が間違ってたのか？"],
+    ["L","母","そんなこと"],
+    ["L","父","奴らのことを思って厳しくいってきたのが間違いだったのか？"],
+    ["L","母","…"],
+    ["L","父","教えてくれよ！俺はどうしたらいいんだ"],
+    ["L","母","…… 今日はもう寝ましょう"],
+    ["L","父","少し一人にしてくれ、頭を冷やしたい。"],
+    ["L","母","わかった"],
+    ["D",null,"母、はける。父一人で考え込んだ後、意を決したように立ち上がり、はける。照明変化。暗めの舞台へ"]
+  ]},
+  { title:"♯4　知恵と学の喧嘩", cues:[
+    ["D",null,"リビングには学が座り、一人でご飯を食べている。知恵がそこへ帰宅する。"],
+    ["L","知恵","ただいま"],
+    ["L","学","おかえり"],
+    ["L","知恵","まだ起きてるの？"],
+    ["L","学","お腹すいたから"],
+    ["L","知恵","そう"],
+    ["L","学","お姉ちゃんはなにしてたの？"],
+    ["L","知恵","なんでもいいでしょ？"],
+    ["L","学","あっそ。どうせ遊んでたんでしょ"],
+    ["L","知恵","だったら何が悪いの"],
+    ["L","学","受験なんだから勉強でもしたら？"],
+    ["L","知恵","あんたに言われたくない"],
+    ["L","学","なんでだよ"],
+    ["L","知恵","あんただって好きなことやって過ごしてるでしょ。だからあんたに言われる筋合いはない"],
+    ["L","学","あっそ"],
+    ["L","知恵","あんたもちょっとは勉強したら？どうせ学校に行ってないんだし、勉強ついていけなくなるよ"],
+    ["L","学","別にいいだろ。俺の勝手だし"],
+    ["L","知恵","（溜息をつきながら）いつも好きなゲームだけやっていいよね"],
+    ["L","学","…… は？"],
+    ["L","知恵","だってそうじゃん。私は学校の課題もあるし、いろいろ考えなきゃいけないことがある。でも学はただゲームしてるだけで…"],
+    ["L","学","（声を荒げる）お前に俺の何が分かるんだよ！"],
+    ["L","知恵","分かるわけないでしょ！何も話してくれないじゃん！私は魔法遣いでもないんだから"],
+    ["L","学","喧嘩売ってんのか？"],
+    ["L","知恵","は？"],
+    ["L","学","喧嘩売ってんのかって言ってんだよ！"],
+    ["D",null,"学、知恵に殴りかかる。"],
+    ["L","知恵","何すんのよ！"],
+    ["D",null,"知恵、学を突き飛ばし返す"],
+    ["L","学","…… 俺だって、やりたくてゲームしてるわけじゃねえよ"],
+    ["L","知恵","は？"],
+    ["L","学","ゲームでもしてないと、惨めなんだよ…… ！何のために生きてるのか分かんなくなる。頭おかしくなりそうなんだよ！（ぽつりと）俺だって…… 学校に行きたい。友達と遊びたい。でも、行けないんだよ…… ！"],
+    ["L","学","（顔を上げ、目を潤ませながら）姉ちゃんが羨ましいよ。普通に学校行って、友達と笑って、将来のこと考えて…… 俺にはそんなの、できないから"],
+    ["D",null,"母、その様子を見て、駆け付ける"],
+    ["L","母","何してるのよ、夜に大声出して… ってどうしたの！！"],
+    ["L","父","何やってるんだ"],
+    ["L","母","知恵、大丈夫？ケガしてるじゃない。"],
+    ["L","父","学、お前ってやつは…"],
+    ["L","学","俺には、俺には味方がいないんだ"],
+    ["D",null,"学、泣きながらはける。"],
+    ["L","父","学、待ちなさい"],
+    ["D",null,"父、学の後を追いかける"],
+    ["L","母","大丈夫？"],
+    ["L","知恵","…"],
+    ["L","母","（驚いて）知恵？"],
+    ["L","知恵","（小さな声で）…… ごめん"],
+    ["L","母","なんで謝るの？"],
+    ["L","知恵","…… ちょっと、外の空気吸ってくる"],
+    ["D",null,"知恵、はける。ドアの開閉音FI"],
+    ["L","父","知恵は？"],
+    ["L","母","外の空気吸ってくるって"],
+    ["L","父","こんな時間に危ないだろ、探してくる"],
+    ["L","母","大丈夫よ、きっと"],
+    ["L","父","そんな無責任な"],
+    ["L","母","そういう時間も必要なの、わかってあげて"],
+    ["L","父","…1時間たって戻ってこなかったら探しに行く"],
+    ["L","母","ありがとう"],
+    ["L","父","… やっぱり俺の育て方が悪かったのかな"],
+    ["L","母","そんなことない"],
+    ["L","父","俺は、おやじに厳しく育ててもらった。確かに嫌な事もあったけど、大きな失敗もしなかったし幸せだった。でも、今は違う"],
+    ["L","母","…"],
+    ["L","父","知恵も学も俺から離れてしまった。親父と同じようにしていたつもりなのに"],
+    ["L","母","お義父さんはお義父さん、あなたはあなたでいいじゃない"],
+    ["L","父","今、幸せか？"],
+    ["L","母","え？"],
+    ["L","父","こんな情けない俺で。こんな情けない父親で幸せか？"],
+    ["L","母","… どうでしょう"],
+    ["L","父","俺は二人にもおまえにも合わせる顔がないよ。"],
+    ["L","母","私はこんな生活も悪くないと思ってる、だってみんな生きてるじゃない、何不自由なく"],
+    ["L","父","… そうか"],
+    ["L","母","きっと知恵も学もわかってくれるはずよ、今すぐではないかもしれないけれど"],
+    ["L","父","そうだと嬉しいな"],
+    ["L","母","そこまで、頑張りましょう"],
+    ["L","父","そうだな"]
+  ]},
+  { title:"♯5　永遠との会話", cues:[
+    ["D",null,"暗転。照明変化　知恵はステージ中央に座り、腕を組んで小さくなっている。春先の夜はまだ肌寒い。ため息をつきながら、スマホを取り出し、しばらく画面を見つめるが、結局何もせずにポケットにしまう。永遠、登場する。"],
+    ["L","永遠","（驚いたように）…… 知恵？"],
+    ["L","知恵","（無理に笑顔を作りながら）あれ、永遠じゃん。こんな時間にどうしたの？"],
+    ["L","永遠","（苦笑して）それはこっちのセリフ。夜の公園で一人座ってる方が不自然じゃない？"],
+    ["L","知恵","（肩をすくめて）まぁね…… ちょっと、いろいろあってさ"],
+    ["L","永遠","そっか。（顔を見て）待って！そのケガどうしたの！"],
+    ["L","知恵","きにしないで"],
+    ["L","永遠","そんなの無理だよ、でも今日何にも持ってないや…"],
+    ["L","知恵","本当に大丈夫だから。ありがとう"],
+    ["L","永遠","… なにがあったの？"],
+    ["D",null,"知恵、少し考える"],
+    ["L","知恵","…… 学と喧嘩した"],
+    ["L","永遠","そうなんだ。仲いいイメージだった。"],
+    ["L","知恵","昔はね"],
+    ["L","永遠","（優しく）何か言われたの？"],
+    ["L","知恵","（ゆっくりと思い出しながら）私が…… 『お前は好きなことだけしてていいよな』って言ったら…… すごい怒って……"],
+    ["L","知恵","（小さな声で）『俺だって、学校行きたい』って。『姉ちゃんが羨ましい』って…… 私、何も分かってなかったんだよね。学のことも、家族のことも…… 。私の方が“普通”で、あの子が“問題”なんだって、どこかで思ってた"],
+    ["D",null,"永遠はコンビニ袋の中を覗き、温かい飲み物を取り出し知恵に差し出す。"],
+    ["L","永遠","（優しく微笑みながら）温かいやつ。飲む？"],
+    ["L","知恵","（驚きつつも受け取る）…… え、いいの？"],
+    ["L","永遠","うん"],
+    ["L","知恵","ありがとう"],
+    ["D",null,"知恵は一口飲む。少しの沈黙。"],
+    ["L","永遠","それで殴り合いになったの？"],
+    ["L","知恵","うん。知らないうちに力強くなってた。今までだったら絶対負けなかったのに"],
+    ["L","永遠","学君って、いくつだっけ？"],
+    ["L","知恵","中2だよ"],
+    ["L","永遠","そりゃそうだよ、もう喧嘩じゃ勝てない"],
+    ["L","知恵","それもそうか"],
+    ["L","永遠","学くん、まだ学校行けてない？"],
+    ["L","知恵","うん"],
+    ["L","永遠","そっか… いじめひどかったもんね"],
+    ["L","知恵","もうその子たちとは離れたんだから関係ないよ"],
+    ["L","永遠","そういうものじゃないよ、一度傷ついた心はなかなか戻らない。"],
+    ["L","知恵","あいつの心が弱いだけだよ"],
+    ["D",null,"永遠、財布からレシートを取り出す。くしゃくしゃにする。"],
+    ["L","永遠","これ、元に戻して"],
+    ["L","知恵","え？（元に戻して）どうしたの急に？"],
+    ["L","永遠","一度くしゃくしゃにしたレシートは一見もとに戻ったように見えても一度ついたシワは戻らない。傷ついた心も一緒だよ、私もそうだし。"],
+    ["L","知恵","… なんかごめんね"],
+    ["L","永遠","ううん、あのさ"],
+    ["L","永遠","知恵は、今幸せ？"],
+    ["L","知恵","（驚いて）え？"],
+    ["L","永遠","（微笑みながらもう一度）知恵は、今幸せ？"],
+    ["L","知恵","なんで？"],
+    ["L","永遠","いいから。考えてみて"],
+    ["L","知恵","… わかんない"],
+    ["L","永遠","どうして？"],
+    ["L","知恵","幸せってわかんない。別に困ってることがあるわけじゃないけど、幸せかって言われたら胸を張って幸せって言えない"],
+    ["L","永遠","何か欲しいものがあるとか？"],
+    ["L","知恵","うーんそういうわけじゃないんだけど、パパはいちいちうるさいし、学は好きなことばっかりして過ごしててうらやましいし。何か満たされない。"],
+    ["L","永遠","（静かに）そっか……"],
+    ["L","知恵","永遠は？"],
+    ["L","永遠","私？"],
+    ["L","知恵","胸を張って幸せって言える？"],
+    ["L","永遠","私は幸せって言える。自信を持って"],
+    ["L","知恵","（思わず）…… どうして？"],
+    ["L","永遠","（笑って）んー…… なんでだろうね"],
+    ["D",null,"永遠、見上げる。"],
+    ["L","永遠","（ゆっくりと言葉を選びながら）言ってなかったんだけどさ、去年、お父さんも病気で動けなくなったんだ。ショックだった。でも何より、バイトしないと生活できなくなった。"],
+    ["L","知恵","（驚いたように）え……"],
+    ["L","永遠","（さらりと）誰かに頼るのも下手だし、しんどい時もあるけど…… それでも、私は生きてるし、こうして知恵と話せてる。それだけで、充分幸せかなって"],
+    ["L","知恵","……"],
+    ["L","永遠","ごめんね、急にこんな話して"],
+    ["L","知恵","ううん、私も永遠の事情知らないでこんな話して"],
+    ["S",null,"スマホの通知音、FI"],
+    ["L","永遠","もうこんな時間。私帰らないと"],
+    ["L","知恵","ごめんね、引き止めちゃって"],
+    ["L","永遠","ううん、じゃあね"],
+    ["L","知恵","じゃあね"],
+    ["D",null,"永遠、はける。知恵はその場で上を見上げ、考え込む。そのまま暗転。"],
+    ["L","知恵","（音声）私って、幸せなの？"],
+    ["L","永遠","（音声）…… 私は、幸せだよ？"],
+    ["L","知恵","（音声）…… 私、何かを“失った”ことなんてあったっけ？学は学校へ行けない。永遠は時間を失くした。じゃあ、私は？"],
+    ["D",null,"照明変化。"],
+    ["L","知恵","ただいま"],
+    ["L","父","おかえり"],
+    ["L","知恵","… まだ起きてたんだ"],
+    ["L","父","ああ"],
+    ["L","知恵","… 少し勉強するわ"],
+    ["L","父","頑張れ、あとこれ"],
+    ["L","知恵","なに？"],
+    ["L","父","おにぎり。小腹すいて作ったんだ"],
+    ["L","知恵","別に要らない"],
+    ["L","父","いいからもってけ、食べなかったらそのままにすれば"],
+    ["L","知恵","… （受け取る）"],
+    ["D",null,"知恵、部屋へ移動。おにぎりの包みを開ける。"],
+    ["L","知恵","… もう"]
+  ]},
+  { title:"♯6　知恵の気づき", cues:[
+    ["D",null,"翌日の夕方。母が座っている"],
+    ["L","知恵","ただいま"],
+    ["L","母","お帰り"],
+    ["L","知恵","あれ？ご飯は？"],
+    ["L","母","もう少しで先生くるから"],
+    ["L","知恵","そうなんだ"],
+    ["L","母","この後時間あるかしら？"],
+    ["L","知恵","うん、勉強するくらいだけど何かあった？"],
+    ["L","母","よかったら先生との面談にいてほしいの"],
+    ["L","知恵","え、なんでさ"],
+    ["L","母","一緒に話を聞いてほしいの。なにか知恵しかできないこともあるかもしれないし"],
+    ["L","知恵","ないない"],
+    ["L","母","わからないでしょ"],
+    ["S",null,"チャイム音FI"],
+    ["L","母","はーい"],
+    ["L","先生","函館中学校の瓜生です"],
+    ["S",null,"ドア開閉音FI"],
+    ["L","母","先生、お忙しい中わざわざすみません。どうぞ、お上がりください"],
+    ["L","先生","いえいえ、とんでもないです。お時間をいただきありがとうございます。今日はお姉さんもいらっしゃるんですね"],
+    ["L","母","この子も一応、弟のことを気にしてはいるみたいなんですけどね。"],
+    ["L","先生","初めまして。学くんの担任をしています、瓜生です。"],
+    ["L","知恵","知恵です"],
+    ["L","母","すみません、不愛想で"],
+    ["L","先生","いえいえ、弟の心配をしているいいお姉さんですね"],
+    ["L","知恵","…… 別に、気にしてるわけじゃないけど"],
+    ["L","先生","なるほど…… 。"],
+    ["L","母","すみません"],
+    ["L","先生","いえ、では本題ですが、登校支援室の話はどうですか？"],
+    ["L","母","本人はあんまり乗り気ではないですね"],
+    ["L","先生","そうですか、やはりタイミングが悪かったですね"],
+    ["L","母","いろいろ気にかけてくださっているのにすみません"],
+    ["L","先生","大丈夫です、何事も一歩ずつですから。"],
+    ["L","知恵","私、いなくてもいい？"],
+    ["L","母","そんなこと言わないで"],
+    ["L","知恵","だって、私関係ないじゃん"],
+    ["L","先生","すみません、関係ない話ばかりしてしまって"],
+    ["L","知恵","いや、それは…"],
+    ["L","先生","一つ聞いてもいいですか？"],
+    ["L","知恵","はい"],
+    ["L","先生","お姉さんは、弟さんと最近どんな感じですか？"],
+    ["L","知恵","特に何もない。別に普段から仲良くないし"],
+    ["L","母","この子たち、小さい頃はまだよかったんですけどね。中学くらいから、ほとんど口をきかなくなって。今じゃ顔を合わせたら喧嘩ばっかりで……"],
+    ["L","知恵","喧嘩っていうか、アイツが勝手にムカついてるだけでしょ"],
+    ["L","母","はいはい…… 。とにかく、家の中で会話らしい会話がないんです"],
+    ["L","先生","学君とは、もうずっとそんな感じなんですか？"],
+    ["L","知恵","別に。アイツのことなんか知らないし、どうでもいい（そう言いながらも、どこか言葉に詰まる）"],
+    ["L","母","…… でも、前にちょっと様子を見に行ったら、部屋の前で立ち止まってたでしょ"],
+    ["L","知恵","…… 別に。ただの偶然"],
+    ["L","先生","…… お姉さんも、弟さんのことを心配してるんですね。"],
+    ["L","知恵","…… は？"],
+    ["L","先生","弟さんに対して、何かしなきゃとは思うけど、どう関わればいいのか分からない…… そんな感じに見えます"],
+    ["L","知恵","別に、そんなことはない"],
+    ["L","母","でも、弟の方もね、お姉ちゃんに対して意地になってる部分はあると思うの。なんかお互いに素直になれないというか……"],
+    ["L","知恵","別に、アイツが何考えてるかなんてどうでもいいし"],
+    ["L","先生","本当に？"],
+    ["L","先生","弟さんも、今は家族に対して心を閉ざしている状態なのかもしれませんね。でも、お姉さんが何かをしても、すぐに変わるわけじゃないし、無理に仲良くしようとする必要もないと思います"],
+    ["L","母","でも、このままじゃ……"],
+    ["L","先生","まずは、お互いに『話しかける』というより、『邪魔をしない』ところから始めてもいいかもしれませんね"],
+    ["L","知恵","…… どういうこと？"],
+    ["L","先生","たとえば、お姉さんがリビングでテレビを見ているときに、弟さんがふらっと出てきても、あえて何も言わない。逆に、弟さんがゲームしているところにお姉さんが入っても、弟さんが何も言わなければ、お姉さんも気にしない"],
+    ["L","母","それで、何か変わるんでしょうか？"],
+    ["L","先生","『お互いに干渉しすぎない』ことで、少しずつ『空気のような存在』になっていくことがあります。そうすると、どちらかが何か話したくなったときに、会話が生まれやすくなるんです"],
+    ["L","知恵","…… まぁ、アイツが勝手にイライラしなくなるなら、別にやってもいいけど"],
+    ["L","母","本当に素直じゃないんだから……"],
+    ["L","先生","お姉さんも、お母さんも、焦らずゆっくりで大丈夫ですよ。学君が少しでも前を向けるように、一緒に考えていきましょう"],
+    ["L","母","…… ありがとうございます。私も、少しやり方を考えてみます"],
+    ["L","先生","はい。何かあれば、いつでも相談してください"],
+    ["L","学","おい"],
+    ["L","母","はい、すみません。知恵お見送りして"],
+    ["L","知恵","え、めんどくさい"],
+    ["L","先生","いえ、お気になさらず"],
+    ["D",null,"母、はける。玄関の扉が閉まり、先生が帰る。扉の前で立ち止まる。"],
+    ["L","先生","あ、そうだ。知恵さん、少し話せますか？"],
+    ["L","知恵","え…… 私？"],
+    ["L","先生","（頷く）はい。学くんの話ばかりだったけど、知恵さんはどうなのかなって"],
+    ["L","知恵","…… 私のことなんて、関係ないでしょ"],
+    ["L","先生","関係なくはないよ。家族のことだし…… それに、なんだか元気がないように見えたから"],
+    ["L","先生","学くんのこと、ずっと支えてあげてるんだね"],
+    ["L","知恵","…"],
+    ["L","先生","家族が大変なとき、頑張りすぎてしまうのはよくあることだよ。でもね…… 知恵さん、自分の気持ちはどうなの？"],
+    ["L","知恵","（小さな声で）…… 疲れました"],
+    ["L","先生","そうだよね"],
+    ["L","知恵","私だって…… 学校でいろいろあるのに。家に帰っても、気を使ってばっかりで…… 。学は『俺だって学校に行きたい』って言ったけど…… 私だって、そんなに楽しいわけじゃないのに『姉ちゃんはいいよな』って言われるけど、全然よくなんかないのに……"],
+    ["L","先生","当たり前のようにそこにあるものって、意識しないでしょ？だけど、いざ失ったときに、それがどれだけ大切だったかに気がつく。だから、今はまだ分からないかもしれない。でもね、知恵さんが今持っているものの中にも、きっと大事なものがあるはずだよ"],
+    ["L","知恵","…… 私が、持っているもの……"],
+    ["L","先生","うん。少しずつでいいから、探してみて。それでは"],
+    ["L","知恵","… ありがとうございます。"],
+    ["D",null,"先生、はける。学、母が入ってくる。"],
+    ["L","母","あ、先生帰っちゃった？"],
+    ["L","学","なら、俺戻る"],
+    ["L","母","そんなこと言わないで、ごはん食べよう"],
+    ["L","学","いいよ、後で食べる"],
+    ["L","母","そんなこと…"],
+    ["L","知恵","ちょっと"],
+    ["L","母","わかった。"],
+    ["D",null,"時間経過を表現する。学に対して「空気になる」家族。"]
+  ]},
+  { title:"♯7　学の変化と知恵への謝罪", cues:[
+    ["D",null,"夜。学が一人でご飯を食べるために入ってくる。一人でご飯の準備をしている。"],
+    ["L","学","あつっ… チンしすぎた"],
+    ["L","学","いただきます"],
+    ["D",null,"知恵、学の前に座る。"],
+    ["L","知恵","起きてたんだ"],
+    ["L","学","腹減ったから"],
+    ["L","知恵","（ぎこちなく）…… ご飯、ちゃんと食べてるんだね。"],
+    ["L","学","（箸を止めて、ちらっと知恵を見る）…… 普通に、食べるし。"],
+    ["L","知恵","（苦笑して）まあ、そりゃそうか。"],
+    ["L","学","（気まずそうに）…… 何？なんか用？"],
+    ["L","知恵","（少し考えて）…… うーん。用、っていうか…… 。（ぽつりと）…… なんかさ、前より話してないなって思って。"],
+    ["L","学","…… 別に、話すことないし。"],
+    ["L","知恵","うん、まあね。私も、何話せばいいか分かんないけど。"],
+    ["L","知恵","（何か話題を探して）…… そういえばさ、この間、先生が言ってたよ。「プリント、ゆっくりでいいからやろうね」って。"],
+    ["L","学","（一瞬箸を止めて、少しムッとする）…… 別に、やる気ないし。"],
+    ["L","知恵","（少し苦笑いして）うん、まあ、そう言うと思った。"],
+    ["L","学","（少しイラついた様子で）…… なら、なんで言うの？"],
+    ["L","知恵","（真剣な表情になって）うーん…… なんでだろ。たぶん、別にプリントの話がしたいわけじゃないんだよね。"],
+    ["L","学","（訝しげに）じゃあ、何？"],
+    ["L","知恵","（少し間を置いて）…… 学さ、1人でご飯食べるの、寂しくない？"],
+    ["L","学","（そっけなく）…… 別に。慣れたし。"],
+    ["L","知恵","（そっと微笑んで）…… そっか。でも、たまには一緒に食べてもいいかもよ。"],
+    ["L","学","（小さな声で）…… たまには、ね。"],
+    ["L","知恵","…… じゃあさ、明日は隣に座ってもいい？"],
+    ["L","学","（少し迷ってから）…… まあ、別に。"],
+    ["D",null,"沈黙。"],
+    ["L","学","（小さな声で）…… 姉ちゃん"],
+    ["L","知恵","なに？"],
+    ["L","学","…… この前は、ごめん"],
+    ["L","知恵","…… なにが？"],
+    ["L","学","（少しうつむきながら）姉ちゃんに、あんなこと言われて、ムカついたんだ。でも…… 俺も、甘えてたんだと思う"],
+    ["L","学","姉ちゃんだって、色々我慢してたのに…… 俺、自分のことばっかりだった…… ごめん"],
+    ["L","知恵","（少し微笑んで）…… そっか"],
+    ["D",null,"沈黙。"],
+    ["L","学","ごちそうさま"],
+    ["L","知恵","ごちそうさま"],
+    ["L","学","俺、寝るね"],
+    ["L","知恵","うん、おやすみ"],
+    ["N",null,"（ここ何かいる）"],
+    ["D",null,"それぞれ、自分の部屋に移動する。しばらくして学が知恵の部屋に来る"],
+    ["L","知恵","どうぞ"],
+    ["L","学","…… 姉ちゃん、ちょっといい？"],
+    ["L","知恵","なに？"],
+    ["L","学","…… 支援室の申請書、書いてみた。"],
+    ["L","知恵","…… 自分で？"],
+    ["L","学","母さんに言ったら、先生に相談してくれるって。でも…… やっぱりちょっと不安で……"],
+    ["L","知恵","（優しく）…… ちゃんと書けてるじゃん"],
+    ["L","学","（照れくさそうに）…… うん"],
+    ["L","知恵","…… 大丈夫だよ。たぶん、最初は緊張すると思うけど、行ってみたら意外と平気かもよ"],
+    ["L","学","うん、ありがとう。おやすみ"],
+    ["L","知恵","おやすみ。"],
+    ["D",null,"学、はける。机の上に置いてある模試の問題を持ってそれに書き込む。"]
+  ]},
+  { title:"♯8　エンディングナレーション", cues:[
+    ["D",null,"家族4人、同じ空間。誰も何も解決していない。ただ、普通の夜。"],
+    ["L","知恵","幸せって何か、まだ分からない。たぶん、点数じゃない。たぶん、うまくいくことでもない。でも、今日みたいな日を、悪くないって思えるなら。それは、少しだけ、幸せなのかもしれない。"],
+    ["L","知恵","幸せって、最初から分かるものじゃないのかもしれない。でも、それを見つけようとすることはできる。私は—— 少しだけ、それに気づけた気がする"],
+    ["D",null,"暗転。（家族の笑い声を入れて）"]
+  ]}
+  ];
+
+  var CHAR_META = {
+    "知恵": { color:"#c2557a", pitch:1.12, rate:1.0 },
+    "学":   { color:"#3f7fb0", pitch:0.85, rate:1.03 },
+    "永遠": { color:"#2f8f80", pitch:1.18, rate:0.97 },
+    "先生": { color:"#7a66ad", pitch:0.82, rate:0.95 },
+    "父":   { color:"#9c6a34", pitch:0.68, rate:0.92 },
+    "母":   { color:"#b5695a", pitch:1.15, rate:1.0 },
+    "友達": { color:"#6d7686", pitch:1.0,  rate:1.08 }
+  };
+  var CHAR_LIST = ["知恵","学","永遠","先生","父","母","友達"];
+
+  /* ---------------- flatten cues ---------------- */
+  var CUES = []; // {type, character, text, sceneIndex, sceneStart(bool)}
+  SCENES.forEach(function(scene, si){
+    scene.cues.forEach(function(c, ci){
+      CUES.push({ type:c[0], character:c[1], text:c[2], sceneIndex:si, sceneStart: ci===0 });
+    });
+  });
+  var totalLineCount = CUES.filter(function(c){ return c.type==="L"; }).length;
+
+  /* ---------------- state ---------------- */
+  var state = {
+    mode: "solo",           // solo | missing
+    myRole: null,
+    absent: {},             // charName -> true
+    idx: -1,                // index of last revealed cue in CUES
+    voicedLineCount: 0,     // count of L cues revealed, for progress
+    speaking: false
+  };
+
+  /* ---------------- speech synthesis ---------------- */
+  var synthAvailable = ("speechSynthesis" in window);
+  var voiceList = [];
+  var charVoiceURI = {};   // charName -> voiceURI override ("" = auto)
+  var globalRate = 1.0;
+  var voiceDirectionsOn = false;
+
+  function loadVoices(){
+    voiceList = synthAvailable ? speechSynthesis.getVoices() : [];
+    renderVoiceAssignList();
+  }
+  if (synthAvailable){
+    loadVoices();
+    speechSynthesis.onvoiceschanged = loadVoices;
+  } else {
+    document.getElementById("tts-warning").style.display = "block";
+  }
+
+  function autoAssignVoice(charName, indexInList){
+    var ja = voiceList.filter(function(v){ return /^ja/i.test(v.lang); });
+    var pool = ja.length ? ja : voiceList;
+    if (!pool.length) return null;
+    return pool[indexInList % pool.length];
+  }
+
+  function stripParentheticals(text){
+    return text.replace(/[（(][^）)]*[）)]/g, "").replace(/\s+/g," ").trim();
+  }
+
+  function speak(text, charName, onend){
+    if (!synthAvailable || !text){ onend && onend(); return; }
+    var spoken = stripParentheticals(text);
+    if (!spoken){ setTimeout(function(){ onend && onend(); }, 300); return; }
+    var u = new SpeechSynthesisUtterance(spoken);
+    u.lang = "ja-JP";
+    var meta = CHAR_META[charName];
+    u.pitch = meta ? meta.pitch : 1;
+    u.rate = (meta ? meta.rate : 1) * globalRate;
+    var uri = charName ? charVoiceURI[charName] : "";
+    if (uri){
+      var v = voiceList.find(function(v){ return v.voiceURI === uri; });
+      if (v) u.voice = v;
+    }
+    u.onend = function(){ onend && onend(); };
+    u.onerror = function(){ onend && onend(); };
+    speechSynthesis.speak(u);
+  }
+
+  function cancelSpeech(){ if (synthAvailable) speechSynthesis.cancel(); }
+
+  /* ---------------- setup UI ---------------- */
+  var soloGrid = document.getElementById("solo-role-grid");
+  var missingGrid = document.getElementById("missing-role-grid");
+
+  CHAR_LIST.forEach(function(name){
+    var meta = CHAR_META[name];
+    var soloBtn = document.createElement("button");
+    soloBtn.type = "button"; soloBtn.className = "role-chip"; soloBtn.setAttribute("aria-pressed","false");
+    soloBtn.style.setProperty("--chip-color", meta.color);
+    soloBtn.style.setProperty("--chip-bg", "color-mix(in srgb," + meta.color + " 16%, transparent)");
+    soloBtn.innerHTML = '<span class="dot" style="background:'+meta.color+'"></span>' + name;
+    soloBtn.addEventListener("click", function(){
+      Array.prototype.forEach.call(soloGrid.children, function(b){ b.setAttribute("aria-pressed","false"); });
+      soloBtn.setAttribute("aria-pressed","true");
+      state.myRole = name;
+      updateStartEnabled();
+    });
+    soloGrid.appendChild(soloBtn);
+
+    var missBtn = document.createElement("button");
+    missBtn.type = "button"; missBtn.className = "role-chip"; missBtn.setAttribute("aria-pressed","false");
+    missBtn.style.setProperty("--chip-color", meta.color);
+    missBtn.style.setProperty("--chip-bg", "color-mix(in srgb," + meta.color + " 16%, transparent)");
+    missBtn.innerHTML = '<span class="dot" style="background:'+meta.color+'"></span>' + name;
+    missBtn.addEventListener("click", function(){
+      var pressed = missBtn.getAttribute("aria-pressed") === "true";
+      missBtn.setAttribute("aria-pressed", pressed ? "false" : "true");
+      if (pressed) delete state.absent[name]; else state.absent[name] = true;
+      updateStartEnabled();
+    });
+    missingGrid.appendChild(missBtn);
+  });
+
+  function updateStartEnabled(){
+    var ok = state.mode === "solo" ? !!state.myRole : Object.keys(state.absent).length > 0;
+    document.getElementById("start-btn").disabled = !ok;
+  }
+
+  var modeGrid = document.getElementById("mode-grid");
+  Array.prototype.forEach.call(modeGrid.children, function(card){
+    card.addEventListener("click", function(){
+      Array.prototype.forEach.call(modeGrid.children, function(c){ c.setAttribute("aria-pressed","false"); });
+      card.setAttribute("aria-pressed","true");
+      state.mode = card.dataset.mode;
+      document.getElementById("solo-fields").style.display = state.mode === "solo" ? "" : "none";
+      document.getElementById("missing-fields").style.display = state.mode === "missing" ? "" : "none";
+      updateStartEnabled();
+    });
+  });
+
+  /* scene jump dropdown */
+  var sceneJump = document.getElementById("scene-jump");
+  SCENES.forEach(function(s, i){
+    var opt = document.createElement("option");
+    opt.value = i; opt.textContent = s.title;
+    sceneJump.appendChild(opt);
+  });
+  sceneJump.addEventListener("change", function(){
+    jumpToScene(parseInt(sceneJump.value, 10));
+  });
+
+  /* ---------------- voice settings drawer ---------------- */
+  var drawer = document.getElementById("drawer");
+  var overlay = document.getElementById("overlay");
+  document.getElementById("open-settings").addEventListener("click", function(){
+    drawer.classList.add("open"); overlay.classList.add("open");
+  });
+  overlay.addEventListener("click", closeDrawer);
+  function closeDrawer(){ drawer.classList.remove("open"); overlay.classList.remove("open"); }
+
+  var rateSlider = document.getElementById("rate-slider");
+  var rateValue = document.getElementById("rate-value");
+  rateSlider.addEventListener("input", function(){
+    globalRate = parseFloat(rateSlider.value);
+    rateValue.textContent = globalRate.toFixed(2) + "×";
+  });
+
+  document.getElementById("voice-directions-toggle").addEventListener("change", function(e){
+    voiceDirectionsOn = e.target.checked;
+  });
+
+  function renderVoiceAssignList(){
+    var wrap = document.getElementById("voice-assign-list");
+    wrap.innerHTML = "";
+    var ja = voiceList.filter(function(v){ return /^ja/i.test(v.lang); });
+    var pool = ja.length ? ja : voiceList;
+    CHAR_LIST.forEach(function(name, i){
+      if (!(name in charVoiceURI)){
+        var auto = autoAssignVoice(name, i);
+        charVoiceURI[name] = auto ? auto.voiceURI : "";
+      }
+      var row = document.createElement("div");
+      row.className = "voice-row";
+      var label = document.createElement("span");
+      label.className = "who-label"; label.textContent = name;
+      label.style.color = CHAR_META[name].color;
+      var sel = document.createElement("select");
+      var optAuto = document.createElement("option");
+      optAuto.value = ""; optAuto.textContent = "自動";
+      sel.appendChild(optAuto);
+      (pool.length ? pool : voiceList).forEach(function(v){
+        var o = document.createElement("option");
+        o.value = v.voiceURI; o.textContent = v.name + " (" + v.lang + ")";
+        if (v.voiceURI === charVoiceURI[name]) o.selected = true;
+        sel.appendChild(o);
+      });
+      sel.addEventListener("change", function(){ charVoiceURI[name] = sel.value; });
+      row.appendChild(label); row.appendChild(sel);
+      wrap.appendChild(row);
+    });
+  }
+
+  /* ---------------- start / stage rendering ---------------- */
+  var setupEl = document.getElementById("setup");
+  var stageEl = document.getElementById("stage");
+  var footerEl = document.getElementById("footer");
+  var glowDot = document.getElementById("glow-dot");
+  var statusPill = document.getElementById("status-pill");
+  var progressLabel = document.getElementById("progress-label");
+  var nextBtn = document.getElementById("next-btn");
+  var backBtn = document.getElementById("back-btn");
+  var restartBtn = document.getElementById("restart-btn");
+
+  document.getElementById("start-btn").addEventListener("click", function(){
+    setupEl.style.display = "none";
+    stageEl.style.display = "block";
+    footerEl.style.display = "flex";
+    resetLog();
+    revealNext();
+  });
+
+  restartBtn.addEventListener("click", function(){
+    cancelSpeech();
+    resetLog();
+    setStatus("idle","準備完了");
+    nextBtn.textContent = "はじめる";
+    nextBtn.disabled = false; backBtn.disabled = true;
+  });
+
+  function resetLog(){
+    state.idx = -1; state.voicedLineCount = 0;
+    stageEl.innerHTML = "";
+    rowsByIndex = {};
+    currentRow = null;
+    updateProgress();
+  }
+
+  function jumpToScene(sceneIdx){
+    cancelSpeech();
+    stageEl.innerHTML = "";
+    rowsByIndex = {};
+    currentRow = null;
+    state.voicedLineCount = 0;
+    // find first cue index of scene
+    var target = 0;
+    for (var i=0;i<CUES.length;i++){ if (CUES[i].sceneIndex === sceneIdx){ target = i; break; } }
+    state.idx = target - 1;
+    if (setupEl.style.display !== "none"){
+      setupEl.style.display = "none"; stageEl.style.display = "block"; footerEl.style.display = "flex";
+    }
+    setStatus("idle","準備完了");
+    revealNext();
+  }
+
+  function setStatus(kind, label){
+    statusPill.className = "status-pill" + (kind==="speaking" ? " speaking" : kind==="you" ? " you" : "");
+    statusPill.textContent = label;
+    glowDot.classList.toggle("live", kind === "speaking");
+  }
+
+  function updateProgress(){
+    progressLabel.textContent = state.voicedLineCount + " / " + totalLineCount + " 行";
+  }
+
+  function currentCueIsUserLine(cue){
+    return state.mode === "solo" && cue.type === "L" && cue.character === state.myRole;
+  }
+  function currentCueShouldSpeak(cue){
+    if (cue.type === "N") return false;
+    if (cue.type !== "L") return voiceDirectionsOn;
+    if (state.mode === "solo") return cue.character !== state.myRole;
+    return !!state.absent[cue.character];
+  }
+
+  function appendRow(cue, idxGlobal){
+    var sceneDivEl = null;
+    if (cue.sceneStart){
+      sceneDivEl = document.createElement("div");
+      sceneDivEl.className = "row scene-div";
+      sceneDivEl.textContent = SCENES[cue.sceneIndex].title;
+      stageEl.appendChild(sceneDivEl);
+    }
+    var row = document.createElement("div");
+    if (cue.type === "D" || cue.type === "S"){
+      row.className = "row direction";
+      row.textContent = cue.text;
+    } else if (cue.type === "N"){
+      row.className = "row note";
+      row.textContent = cue.text;
+    } else {
+      row.className = "row line current";
+      var who = document.createElement("div");
+      who.className = "who";
+      who.style.setProperty("--chip-color", CHAR_META[cue.character] ? CHAR_META[cue.character].color : "inherit");
+      who.textContent = cue.character;
+      var say = document.createElement("div");
+      say.className = "say";
+      say.innerHTML = escapeHtml(cue.text).replace(/([（(][^）)]*[）)])/g, '<span class="beat">$1</span>');
+      row.appendChild(who); row.appendChild(say);
+    }
+    stageEl.appendChild(row);
+    row.scrollIntoView({ behavior:"smooth", block:"end" });
+    rowsByIndex[idxGlobal] = { main: row, sceneDiv: sceneDivEl };
+    return row;
+  }
+
+  function escapeHtml(s){
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+
+  function markRowDone(row){
+    if (!row) return;
+    row.classList.remove("current","speaking","your-turn");
+    row.classList.add("done");
+  }
+
+  var currentRow = null;
+  var rowsByIndex = {};
+
+  function revealNext(){
+    markRowDone(currentRow);
+    state.idx++;
+    var cue = CUES[state.idx];
+    if (!cue){
+      showEnd();
+      return;
+    }
+    currentRow = appendRow(cue, state.idx);
+    if (cue.type === "L") state.voicedLineCount++;
+    updateProgress();
+
+    var speakThis = currentCueShouldSpeak(cue);
+    var isUserLine = currentCueIsUserLine(cue);
+
+    if (state.mode === "solo"){
+      if (isUserLine){
+        currentRow.classList.add("your-turn");
+        setStatus("you","あなたの番です");
+        nextBtn.textContent = "読み終えたら次へ";
+        nextBtn.className = "btn primary wait-you";
+        nextBtn.disabled = false; backBtn.disabled = state.idx === 0;
+      } else if (speakThis || (cue.type !== "L" && voiceDirectionsOn)){
+        currentRow.classList.add("speaking");
+        setStatus("speaking","読み上げ中…");
+        nextBtn.disabled = true; backBtn.disabled = true;
+        speak(cue.text, cue.character, function(){
+          setStatus("idle","準備完了");
+          revealNext();
+        });
+      } else {
+        // direction/sound/note with no voice: brief pause then continue automatically
+        setStatus("idle","準備完了");
+        nextBtn.disabled = true; backBtn.disabled = true;
+        setTimeout(revealNext, 350);
+      }
+    } else {
+      // missing-cast mode: every cue needs a manual click, but absent-role lines auto-speak on reveal
+      nextBtn.textContent = "次へ";
+      nextBtn.className = "btn primary";
+      if (speakThis){
+        currentRow.classList.add("speaking");
+        setStatus("speaking","代役で読み上げ中…");
+        nextBtn.disabled = true; backBtn.disabled = true;
+        speak(cue.text, cue.character, function(){
+          setStatus("idle","準備完了（現場で読んでください）");
+          nextBtn.disabled = false; backBtn.disabled = state.idx === 0;
+        });
+      } else {
+        setStatus("idle", cue.type === "L" ? "現場で読んでください" : "準備完了");
+        nextBtn.disabled = false; backBtn.disabled = state.idx === 0;
+      }
+    }
+  }
+
+  function goBack(){
+    if (state.idx <= 0) return;
+    cancelSpeech();
+
+    var endCard = document.getElementById("end-card");
+    if (endCard && endCard.parentNode) endCard.parentNode.removeChild(endCard);
+
+    // discard the row for the current (last revealed) cue entirely
+    var entry = rowsByIndex[state.idx];
+    if (entry){
+      if (entry.main && entry.main.parentNode) stageEl.removeChild(entry.main);
+      if (entry.sceneDiv && entry.sceneDiv.parentNode) stageEl.removeChild(entry.sceneDiv);
+      delete rowsByIndex[state.idx];
+    }
+    if (CUES[state.idx] && CUES[state.idx].type === "L") state.voicedLineCount = Math.max(0, state.voicedLineCount - 1);
+
+    state.idx--;
+    updateProgress();
+
+    var cue = CUES[state.idx];
+    currentRow = (state.idx >= 0 && rowsByIndex[state.idx]) ? rowsByIndex[state.idx].main : null;
+
+    if (!cue){
+      setStatus("idle","準備完了");
+      nextBtn.textContent = "はじめる"; nextBtn.className = "btn primary";
+      nextBtn.disabled = false; backBtn.disabled = true;
+      return;
+    }
+
+    // revive the previous row as "current" again, without re-triggering speech
+    if (currentRow){
+      currentRow.classList.remove("done","speaking","your-turn");
+      currentRow.classList.add("current");
+    }
+
+    if (state.mode === "solo" && currentCueIsUserLine(cue)){
+      if (currentRow) currentRow.classList.add("your-turn");
+      setStatus("you","あなたの番です");
+      nextBtn.textContent = "読み終えたら次へ"; nextBtn.className = "btn primary wait-you";
+    } else {
+      setStatus("idle","準備完了");
+      nextBtn.textContent = "次へ"; nextBtn.className = "btn primary";
+    }
+    nextBtn.disabled = false;
+    backBtn.disabled = state.idx <= 0;
+  }
+
+  function showEnd(){
+    var div = document.createElement("div");
+    div.id = "end-card";
+    div.textContent = "— 台本の最後まで読み終えました —";
+    stageEl.appendChild(div);
+    div.scrollIntoView({ behavior:"smooth", block:"end" });
+    setStatus("idle","終了");
+    nextBtn.disabled = true; backBtn.disabled = state.idx <= 0;
+    nextBtn.textContent = "終了";
+  }
+
+  nextBtn.addEventListener("click", function(){
+    if (state.mode === "solo" && CUES[state.idx] && currentCueIsUserLine(CUES[state.idx])){
+      markRowDone(currentRow);
+    }
+    revealNext();
+  });
+  backBtn.addEventListener("click", goBack);
+  backBtn.disabled = true;
+
+  document.addEventListener("keydown", function(e){
+    if (setupEl.style.display !== "none") return;
+    if (["INPUT","SELECT","TEXTAREA"].indexOf(document.activeElement.tagName) !== -1) return;
+    if ((e.key === " " || e.key === "Enter") && !nextBtn.disabled){
+      e.preventDefault(); nextBtn.click();
+    }
+  });
+
+  updateStartEnabled();
+})();
+</script>
