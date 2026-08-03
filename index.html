@@ -150,6 +150,12 @@
   .row.direction{ text-align:center; font-size:.82rem; color:var(--ink-dim); font-style:italic; padding:.5rem 1rem; }
   .row.note{ text-align:center; font-size:.75rem; color:var(--ink-dim); border:1px dashed var(--border); border-radius:8px; padding:.3rem .6rem; margin:.3rem auto; max-width:20rem; }
 
+  .preview-block{ margin-top:.3rem; padding-top:.6rem; border-top:1px dashed var(--border); }
+  .preview-label{ font-size:.62rem; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-dim); margin:0 .2rem .4rem; }
+  .row.preview{ opacity:.48; }
+  .row.line.preview{ background:none; border:none; box-shadow:none; padding:.4rem .5rem; }
+  .row.scene-div.preview{ margin:.7rem 0 .4rem; }
+
   .row.line{ display:flex; gap:.75rem; align-items:flex-start; padding:.55rem .5rem; border-radius:var(--radius); }
   .who{
     flex:none; width:4.4rem; text-align:right; font-size:.78rem; font-weight:700; padding-top:.15rem;
@@ -1122,6 +1128,7 @@
     stageEl.innerHTML = "";
     rowsByIndex = {};
     currentRow = null;
+    previewBlockEl = null;
     updateProgress();
   }
 
@@ -1130,6 +1137,7 @@
     stageEl.innerHTML = "";
     rowsByIndex = {};
     currentRow = null;
+    previewBlockEl = null;
     state.voicedLineCount = 0;
     // find first cue index of scene
     var target = 0;
@@ -1189,9 +1197,70 @@
       row.appendChild(who); row.appendChild(say);
     }
     stageEl.appendChild(row);
-    row.scrollIntoView({ behavior:"smooth", block:"end" });
     rowsByIndex[idxGlobal] = { main: row, sceneDiv: sceneDivEl };
     return row;
+  }
+
+  var PREVIEW_COUNT = 5;
+  var previewBlockEl = null;
+
+  function clearPreview(){
+    if (previewBlockEl && previewBlockEl.parentNode) previewBlockEl.parentNode.removeChild(previewBlockEl);
+    previewBlockEl = null;
+  }
+
+  function renderPreviewBlock(){
+    clearPreview();
+    var items = [];
+    var lineCount = 0;
+    var i = state.idx + 1;
+    while (i < CUES.length && lineCount < PREVIEW_COUNT){
+      items.push(CUES[i]);
+      if (CUES[i].type === "L") lineCount++;
+      i++;
+    }
+    if (!items.length) return;
+
+    var block = document.createElement("div");
+    block.className = "preview-block";
+
+    var label = document.createElement("div");
+    label.className = "preview-label";
+    label.textContent = "この先のセリフ（プレビュー）";
+    block.appendChild(label);
+
+    items.forEach(function(cue){
+      if (cue.type === "N") return;
+      if (cue.sceneStart){
+        var div = document.createElement("div");
+        div.className = "row scene-div preview";
+        div.textContent = SCENES[cue.sceneIndex].title;
+        block.appendChild(div);
+      }
+      var row = document.createElement("div");
+      if (cue.type === "D" || cue.type === "S"){
+        row.className = "row direction preview";
+        row.textContent = cue.text;
+      } else {
+        row.className = "row line preview";
+        var who = document.createElement("div");
+        who.className = "who";
+        who.style.setProperty("--chip-color", CHAR_META[cue.character] ? CHAR_META[cue.character].color : "inherit");
+        who.textContent = cue.character;
+        var say = document.createElement("div");
+        say.className = "say";
+        say.innerHTML = escapeHtml(cue.text).replace(/([（(][^）)]*[）)])/g, '<span class="beat">$1</span>');
+        row.appendChild(who); row.appendChild(say);
+      }
+      block.appendChild(row);
+    });
+
+    stageEl.appendChild(block);
+    previewBlockEl = block;
+  }
+
+  function scrollToCurrent(){
+    if (currentRow) currentRow.scrollIntoView({ behavior:"smooth", block:"center" });
   }
 
   function escapeHtml(s){
@@ -1218,6 +1287,8 @@
     currentRow = appendRow(cue, state.idx);
     if (cue.type === "L") state.voicedLineCount++;
     updateProgress();
+    renderPreviewBlock();
+    scrollToCurrent();
 
     var speakThis = currentCueShouldSpeak(cue);
     var isUserLine = currentCueIsUserLine(cue);
@@ -1268,6 +1339,7 @@
 
     var endCard = document.getElementById("end-card");
     if (endCard && endCard.parentNode) endCard.parentNode.removeChild(endCard);
+    clearPreview();
 
     // discard the row for the current (last revealed) cue entirely
     var entry = rowsByIndex[state.idx];
@@ -1307,9 +1379,12 @@
     }
     nextBtn.disabled = false;
     backBtn.disabled = state.idx <= 0;
+    renderPreviewBlock();
+    scrollToCurrent();
   }
 
   function showEnd(){
+    clearPreview();
     var div = document.createElement("div");
     div.id = "end-card";
     div.textContent = "— 台本の最後まで読み終えました —";
