@@ -1280,6 +1280,14 @@
     }
   }
 
+  // Best-effort: called for every delete regardless of whether a cloud copy
+  // is known to exist, so a missing document is not treated as a failure.
+  function deleteCloudRecording(scriptId, cueIndex){
+    var docId = cloudDocId(scriptId, cueIndex);
+    return fetch(FIRESTORE_RECORDINGS_URL + "/" + encodeURIComponent(docId) + "?key=" + FIREBASE_API_KEY, { method:"DELETE" })
+      .catch(function(){ /* ignore */ });
+  }
+
   function getDB(){
     if (dbPromise) return dbPromise;
     dbPromise = new Promise(function(resolve, reject){
@@ -1391,6 +1399,7 @@
   var mediaRecorder = null;
   var recordedChunks = [];
   var recordingCueIndex = null;
+  var currentRecordSource = null; // "local" | "cloud" | "static" | null — what updateRecordUI last found for the displayed line
 
   function startRecording(){
     if (!recordingSupported || !CUES[state.idx]) return;
@@ -1455,15 +1464,21 @@
   var sharedMissCache = {}; // cueIndex -> true, once confirmed absent (avoids re-fetching every time)
 
   async function fetchSharedRecording(cueIndex){
-    var missKey = currentScriptId + "::" + cueIndex;
-    if (sharedMissCache[missKey]) return null;
-
     // Live shared recordings (uploaded moments ago by anyone on any device) take
     // priority over the static "recordings/" folder below, which only ever holds
     // whatever was baked into the deployed site ahead of time.
     var cloudBlob = await fetchCloudRecording(currentScriptId, cueIndex);
     if (cloudBlob) return cloudBlob;
 
+    return await fetchStaticRecording(cueIndex);
+  }
+
+  // The pre-baked "recordings/" folder shipped with the deployed site — these
+  // files aren't deletable from the app itself (that would need editing the
+  // repo), unlike a Firestore-backed cloud recording.
+  async function fetchStaticRecording(cueIndex){
+    var missKey = currentScriptId + "::" + cueIndex;
+    if (sharedMissCache[missKey]) return null;
     // probe all known extensions in parallel — takes one round-trip, not up to five in a row.
     // each probe is aborted after 2.5s so a stalled/slow network (common on mobile data)
     // can never leave playback hanging indefinitely waiting on this check.
@@ -1545,24 +1560,38 @@
     recordStatusEl.classList.remove("has-audio");
     recordStatusEl.textContent = "確認中…";
 
+    currentRecordSource = null;
     loadRecording(idxAtCall).then(function(rec){
       if (state.idx !== idxAtCall) return; // stale response, line already changed
       if (rec){
+        currentRecordSource = "local";
         recordStatusEl.textContent = "🔊 録音あり（クリックで試聴）";
         recordStatusEl.classList.add("has-audio");
         recShareBtn.disabled = false;
         recDeleteBtn.disabled = false;
         return;
       }
-      fetchSharedRecording(idxAtCall).then(function(blob){
+      fetchCloudRecording(currentScriptId, idxAtCall).then(function(cloudBlob){
         if (state.idx !== idxAtCall) return;
-        if (blob){
-          recordStatusEl.textContent = "☁️ 共有録音あり（クリックで試聴）";
+        if (cloudBlob){
+          currentRecordSource = "cloud";
+          recordStatusEl.textContent = "☁️ 共有録音あり（クリックで試聴・削除も可）";
           recordStatusEl.classList.add("has-audio");
-        } else {
-          recordStatusEl.textContent = "未録音";
-          recordStatusEl.classList.remove("has-audio");
+          recDeleteBtn.disabled = false; // a Firestore-backed recording can be removed for everyone
+          return;
         }
+        fetchStaticRecording(idxAtCall).then(function(blob){
+          if (state.idx !== idxAtCall) return;
+          if (blob){
+            currentRecordSource = "static";
+            recordStatusEl.textContent = "☁️ 共有録音あり（クリックで試聴）";
+            recordStatusEl.classList.add("has-audio");
+            // not deletable from the app: baked into the deployed site's files
+          } else {
+            recordStatusEl.textContent = "未録音";
+            recordStatusEl.classList.remove("has-audio");
+          }
+        });
       });
     }).catch(function(){
       if (state.idx === idxAtCall) recordStatusEl.textContent = "未録音";
@@ -1574,7 +1603,10 @@
   recShareBtn.addEventListener("click", function(){ downloadRecordingForSharing(state.idx); });
   recDeleteBtn.addEventListener("click", function(){
     var idx = state.idx;
-    deleteRecording(idx).then(updateRecordUI);
+    // Always attempt both: harmless if one side has nothing to delete, and
+    // avoids leaving a stray copy behind on whichever side wasn't checked.
+    Promise.all([ deleteRecording(idx), deleteCloudRecording(currentScriptId, idx) ])
+      .then(updateRecordUI, updateRecordUI);
   });
   recordStatusEl.addEventListener("click", function(){
     if (!recordStatusEl.classList.contains("has-audio")) return;
