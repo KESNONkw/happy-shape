@@ -1,4 +1,38 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#eceee7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15171b" media="(prefers-color-scheme: dark)">
+<meta name="format-detection" content="telephone=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <title>「幸せのカタチ」本読みアシスタント</title>
+
+<!-- Layout mode is resolved before the first paint so a phone never flashes the
+     desktop layout on its way to the mobile one. A saved manual choice always
+     wins; otherwise a narrow viewport, a touch-first pointer, or a mobile UA
+     each independently mean "mobile" (iPadOS reports a Mac UA, but a coarse
+     pointer still catches it). -->
+<script>
+(function(){
+  var mode = "desktop";
+  try {
+    var saved = localStorage.getItem("happyShapeUiMode");
+    if (saved === "mobile" || saved === "desktop"){
+      mode = saved;
+    } else {
+      var mm = window.matchMedia;
+      var narrow = mm && mm("(max-width: 820px)").matches;
+      var touch  = mm && mm("(pointer: coarse)").matches;
+      var mobileUA = /Android|iPhone|iPad|iPod|Mobile|Silk/i.test(navigator.userAgent || "");
+      mode = (narrow || touch || mobileUA) ? "mobile" : "desktop";
+    }
+  } catch (e){ /* private mode / blocked storage: fall back to desktop */ }
+  document.documentElement.setAttribute("data-ui", mode);
+})();
+</script>
+
 <style>
   :root{
     --bg:#eceee7;
@@ -107,6 +141,8 @@
     background:var(--surface); color:var(--ink); font-family:var(--sans); font-size:.85rem;
   }
   .import-input{ margin-bottom:1rem; }
+  .manual-note{ margin-top:1.4rem; text-align:center; }
+  .manual-link{ color:var(--accent-2); font-weight:600; text-decoration:underline; text-underline-offset:2px; }
   .import-textarea{ line-height:1.7; resize:vertical; }
 
   .review-rows{ display:flex; flex-direction:column; gap:.4rem; max-height:60vh; overflow-y:auto; padding:.2rem; }
@@ -199,12 +235,12 @@
   .row.line.preview{ background:none; border:none; box-shadow:none; padding:.4rem .5rem; }
   .row.scene-div.preview{ margin:.7rem 0 .4rem; }
 
-  .row.line{ display:flex; gap:.75rem; align-items:flex-start; padding:.55rem .5rem; border-radius:var(--radius); }
+  .row.line{ display:flex; gap:.75rem; align-items:flex-start; padding:.55rem .5rem; border-radius:var(--radius); min-width:0; }
   .who{
     flex:none; width:4.4rem; text-align:right; font-size:.78rem; font-weight:700; padding-top:.15rem;
     color:var(--chip-color, var(--ink));
   }
-  .say{ font-family:var(--serif); font-size:1.02rem; line-height:1.85; }
+  .say{ font-family:var(--serif); font-size:1.02rem; line-height:1.85; min-width:0; overflow-wrap:anywhere; }
   .say .beat{ color:var(--ink-dim); font-style:italic; font-size:.92em; }
   .row.line.done{ opacity:.55; }
   .row.line.current{ background:var(--surface); border:1px solid var(--border); box-shadow:0 1px 3px color-mix(in srgb, var(--ink) 8%, transparent); }
@@ -235,9 +271,11 @@
   .status-pill.you{ color:var(--accent-2); border-color:var(--accent-2); }
 
   .record-row{
-    display:none; align-items:center; gap:.5rem; font-size:.78rem; color:var(--ink-dim);
+    display:none; align-items:center; gap:.6rem; font-size:.78rem; color:var(--ink-dim);
     padding:.15rem .1rem .35rem;
   }
+  .rec-line{ display:flex; align-items:center; gap:.45rem; flex:1; min-width:0; }
+  .rec-actions{ display:flex; align-items:center; gap:.4rem; flex:none; }
   .record-row.recording{ color:var(--danger); }
   .record-row .rec-dot{
     width:.5rem; height:.5rem; border-radius:50%; background:var(--danger); flex:none; display:none;
@@ -245,9 +283,22 @@
   .record-row.recording .rec-dot{ display:inline-block; animation:recpulse 1s ease-in-out infinite; }
   @media (prefers-reduced-motion: reduce){ .record-row.recording .rec-dot{ animation:none; } }
   @keyframes recpulse{ 0%,100%{ opacity:1; } 50%{ opacity:.3; } }
-  .record-status{ flex:1; }
+  .record-status{ flex:1; min-width:0; }
   .record-status.has-audio{ cursor:pointer; text-decoration:underline; text-underline-offset:2px; color:var(--accent-2); }
+  /* Saving is the one moment a recording can still be lost, so it gets its own
+     colour rather than sharing the neutral "status" grey. */
+  .record-status.saving{ color:var(--accent); }
+  .record-status.saved{ color:var(--accent-2); }
+  .record-status.failed{ color:var(--danger); font-weight:600; }
+  .rec-timer{
+    flex:none; font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:.76rem;
+    color:var(--danger); display:none;
+  }
+  .record-row.recording .rec-timer{ display:inline-block; }
   .rec-btn{ font-size:.76rem; padding:.4rem .55rem; white-space:nowrap; }
+  /* The single big start/stop control exists only in the phone layout, where two
+     separate small buttons were the thing people kept mis-tapping. */
+  .rec-toggle{ display:none; }
 
   .ctrl-row{ display:flex; gap:.5rem; align-items:stretch; }
   .btn{
@@ -289,7 +340,144 @@
     background:var(--accent-soft); color:var(--accent); border:1px solid var(--accent);
     border-radius:8px; padding:.6rem .8rem; font-size:.8rem; margin-bottom:1.2rem;
   }
+
+  /* ==================================================================
+     PHONE LAYOUT  ( :root[data-ui="mobile"] )
+     ------------------------------------------------------------------
+     Selected by the pre-paint script in <head> and overridable by the
+     header toggle, NOT by a media query — a media query cannot be
+     overridden by a user's explicit "show me the PC layout" choice on a
+     phone, and cannot give a PC user the phone layout to check what the
+     cast is actually looking at. Every rule below is scoped to that one
+     attribute so the desktop layout above is untouched.
+
+     The rehearsal screen is used one-handed, at arm's length, while
+     reading out loud — so: 44px+ tap targets everywhere, the record
+     control as one unmistakable full-width button, 16px form text (any
+     smaller and iOS Safari zooms the page in on focus and never zooms
+     back out), dvh instead of vh (iOS' shrinking URL bar makes 100vh
+     taller than the visible viewport), and safe-area padding so the
+     primary button never sits under the home indicator.
+     ================================================================== */
+  :root[data-ui="mobile"] body{ min-height:100dvh; }
+  :root[data-ui="mobile"] html{ -webkit-text-size-adjust:100%; }
+
+  /* --- header --- */
+  :root[data-ui="mobile"] header{
+    flex-wrap:wrap; gap:.5rem; padding:.55rem .7rem;
+    padding-top:calc(.55rem + env(safe-area-inset-top));
+  }
+  :root[data-ui="mobile"] .titles .play{ font-size:.95rem; }
+  :root[data-ui="mobile"] .titles .sub{ display:none; }
+  /* The controls take a full-width second row of their own, with the scene
+     picker absorbing the slack — given a 100% flex-basis in a row that does not
+     wrap, it made the page wider than the phone and clipped every line. */
+  :root[data-ui="mobile"] .hdr-scene{
+    gap:.35rem; order:3; width:100%; margin-left:0; min-width:0;
+  }
+  :root[data-ui="mobile"] .hdr-scene select{
+    flex:1 1 auto; min-width:0; max-width:none; width:auto; font-size:16px; padding:.5rem .55rem;
+  }
+  :root[data-ui="mobile"] .icon-btn{ width:2.6rem; height:2.6rem; font-size:1.15rem; }
+
+  /* --- scrolling area --- */
+  :root[data-ui="mobile"] main{
+    padding:.7rem .7rem 1.2rem; -webkit-overflow-scrolling:touch; overscroll-behavior-y:contain;
+  }
+  :root[data-ui="mobile"] #library,
+  :root[data-ui="mobile"] #import,
+  :root[data-ui="mobile"] #setup{ padding:1.1rem .85rem 1.6rem; }
+  :root[data-ui="mobile"] .lead{ font-size:1rem; line-height:1.85; margin-bottom:1.2rem; }
+
+  /* --- setup: everything thumb-sized and one per row --- */
+  :root[data-ui="mobile"] .mode-grid{ grid-template-columns:1fr; }
+  :root[data-ui="mobile"] .mode-card{ padding:1rem; }
+  :root[data-ui="mobile"] .mode-card b{ font-size:1rem; }
+  :root[data-ui="mobile"] .role-grid{ gap:.55rem; }
+  :root[data-ui="mobile"] .role-chip{ min-height:2.9rem; padding:.5rem 1.15rem; font-size:.95rem; }
+  :root[data-ui="mobile"] .start-btn{ min-height:3.4rem; font-size:1.02rem; }
+  :root[data-ui="mobile"] .script-card{ padding:.9rem; }
+  :root[data-ui="mobile"] .script-card-actions .btn{ min-height:2.75rem; padding:.5rem .9rem; font-size:.88rem; }
+  :root[data-ui="mobile"] .import-input,
+  :root[data-ui="mobile"] .import-textarea,
+  :root[data-ui="mobile"] .review-char-input,
+  :root[data-ui="mobile"] .review-text-input,
+  :root[data-ui="mobile"] .review-scene-input{ font-size:16px; }
+  :root[data-ui="mobile"] .review-char-input{ width:4.5rem; }
+  :root[data-ui="mobile"] .review-rows{ max-height:none; }
+
+  /* --- stage: the speaker name reads as a label above the line, not as a
+         narrow right-aligned column that squeezes the dialogue into a
+         ribbon on a 390px screen --- */
+  :root[data-ui="mobile"] #stage{ background-image:none; }
+  :root[data-ui="mobile"] .row.line{ flex-direction:column; gap:.15rem; padding:.6rem .6rem; }
+  :root[data-ui="mobile"] .who{
+    width:auto; text-align:left; font-size:.76rem; letter-spacing:.04em; padding-top:0;
+  }
+  :root[data-ui="mobile"] .say{
+    font-size:1.12rem; line-height:1.95; min-width:0; overflow-wrap:anywhere;
+  }
+  :root[data-ui="mobile"] .row.line.current{ padding:.75rem .7rem; }
+  :root[data-ui="mobile"] .row.direction{ font-size:.86rem; padding:.5rem .3rem; }
+  :root[data-ui="mobile"] .preview-block{ margin-top:.5rem; }
+  :root[data-ui="mobile"] .row.line.preview{ padding:.35rem .6rem; }
+
+  /* --- footer: the only part of the app in use while actually speaking --- */
+  :root[data-ui="mobile"] footer{
+    padding:.55rem .7rem; gap:.6rem;
+    padding-bottom:calc(.55rem + env(safe-area-inset-bottom));
+    box-shadow:0 -6px 18px color-mix(in srgb, var(--ink) 10%, transparent);
+  }
+  :root[data-ui="mobile"] .status-line{ font-size:.8rem; flex-wrap:wrap; row-gap:.2rem; }
+  :root[data-ui="mobile"] .record-row{
+    flex-direction:column; align-items:stretch; gap:.5rem;
+    background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius);
+    padding:.6rem .7rem; font-size:.85rem;
+  }
+  :root[data-ui="mobile"] .rec-line{ flex:none; }
+  :root[data-ui="mobile"] .record-status{ font-size:.85rem; line-height:1.5; }
+  :root[data-ui="mobile"] .rec-timer{ font-size:.95rem; font-weight:700; }
+  :root[data-ui="mobile"] .rec-actions{ display:grid; grid-template-columns:1fr auto auto; gap:.45rem; }
+  :root[data-ui="mobile"] #rec-start-btn,
+  :root[data-ui="mobile"] #rec-stop-btn{ display:none; }
+  :root[data-ui="mobile"] .rec-toggle{
+    display:block; grid-column:1; min-height:3.1rem; font-size:1rem; font-weight:700;
+    background:var(--danger); border-color:var(--danger); color:#fff;
+  }
+  :root[data-ui="mobile"] .rec-toggle[data-state="recording"]{
+    background:var(--surface); color:var(--danger); border-width:2px;
+  }
+  :root[data-ui="mobile"] #rec-retry-btn,
+  :root[data-ui="mobile"] #rec-delete-btn{ min-height:3.1rem; padding:.5rem .8rem; font-size:.85rem; }
+  :root[data-ui="mobile"] .ctrl-row{ gap:.45rem; }
+  :root[data-ui="mobile"] .btn{ min-height:3.1rem; }
+  :root[data-ui="mobile"] .btn.primary{ min-height:3.6rem; font-size:1.05rem; }
+  :root[data-ui="mobile"] #back-btn,
+  :root[data-ui="mobile"] #restart-btn{ padding:.7rem .75rem; font-size:.8rem; flex:none; }
+
+  /* --- settings: a right-hand drawer is a desktop shape; on a phone it
+         becomes a bottom sheet that starts under the thumb --- */
+  :root[data-ui="mobile"] #drawer{
+    left:0; right:0; top:auto; bottom:0; width:auto; max-height:82dvh;
+    border-left:none; border-top:1px solid var(--border);
+    border-radius:16px 16px 0 0; transform:translateY(100%);
+    padding:1rem 1rem calc(1.2rem + env(safe-area-inset-bottom));
+  }
+  :root[data-ui="mobile"] #drawer.open{ transform:translateY(0); }
+  :root[data-ui="mobile"] #drawer::before{
+    content:""; display:block; width:2.5rem; height:4px; border-radius:999px;
+    background:var(--border); margin:-.25rem auto .8rem;
+  }
+  :root[data-ui="mobile"] .toggle-row{ min-height:2.9rem; font-size:.92rem; }
+  :root[data-ui="mobile"] .toggle-row input[type="checkbox"]{ width:1.4rem; height:1.4rem; }
+  :root[data-ui="mobile"] .voice-row{ font-size:.88rem; }
+  :root[data-ui="mobile"] .voice-row select{ font-size:16px; padding:.5rem; }
+  :root[data-ui="mobile"] input[type="range"]{ height:2.2rem; }
+
 </style>
+</head>
+
+<body>
 
 <header>
   <span class="glow" id="glow-dot"></span>
@@ -301,6 +489,7 @@
     <button class="icon-btn" id="open-library" title="台本の書庫へ" aria-label="書庫へ">📚</button>
     <label class="visually-hidden" for="scene-jump">場面へ移動</label>
     <select id="scene-jump"></select>
+    <button class="icon-btn" id="toggle-ui" title="スマホ表示／PC表示を切り替え" aria-label="表示を切り替え"></button>
     <button class="icon-btn" id="open-settings" title="設定" aria-label="設定">⚙</button>
   </div>
 </header>
@@ -310,6 +499,9 @@
     <p class="lead">保存されている台本を選ぶか、新しい台本を追加してください。</p>
     <div id="script-list" class="script-list"></div>
     <button class="btn ghost" id="add-script-btn" style="width:100%;margin-top:.8rem;">＋ 新しい台本を追加</button>
+    <p class="hint manual-note">使い方が分からないときは
+      <a href="https://kesnonkw.github.io/happy-shape/manual.pdf" target="_blank" rel="noopener" class="manual-link">📘 操作マニュアル（PDF）</a>
+    </p>
   </section>
 
   <section id="import" style="display:none;">
@@ -381,12 +573,18 @@
     <span id="progress-label" style="margin-left:auto; font-family:var(--mono); font-variant-numeric:tabular-nums;"></span>
   </div>
   <div class="record-row" id="record-row">
-    <span class="rec-dot" id="rec-dot"></span>
-    <span class="record-status" id="record-status">未録音</span>
-    <button class="btn rec-btn" id="rec-start-btn" title="このセリフの録音を開始">● 録音開始</button>
-    <button class="btn rec-btn" id="rec-stop-btn" title="録音を停止して保存" disabled>■ 録音停止</button>
-    <button class="btn rec-btn ghost" id="rec-share-btn" title="録音停止時に自動保存されたファイルを見失った場合、もう一度ダウンロードします" disabled>⬇ もう一度DL</button>
-    <button class="btn rec-btn ghost" id="rec-delete-btn" title="このセリフの録音を削除" disabled>🗑 削除</button>
+    <div class="rec-line">
+      <span class="rec-dot" id="rec-dot"></span>
+      <span class="record-status" id="record-status">未録音</span>
+      <span class="rec-timer" id="rec-timer"></span>
+    </div>
+    <div class="rec-actions">
+      <button class="btn rec-btn rec-toggle" id="rec-toggle-btn" title="録音を開始／停止">● 録音する</button>
+      <button class="btn rec-btn" id="rec-start-btn" title="このセリフの録音を開始">● 録音開始</button>
+      <button class="btn rec-btn" id="rec-stop-btn" title="録音を停止して保存" disabled>■ 録音停止</button>
+      <button class="btn rec-btn ghost" id="rec-retry-btn" title="共有の保存に失敗した録音をもう一度送ります" style="display:none;">↻ 再送</button>
+      <button class="btn rec-btn ghost" id="rec-delete-btn" title="このセリフの録音を削除" disabled>🗑 削除</button>
+    </div>
   </div>
   <div class="ctrl-row">
     <button class="btn ghost" id="back-btn" title="一つ戻る">◀ 戻る</button>
@@ -1260,33 +1458,47 @@
 
   function recordingKey(scriptId, cueIndex){ return scriptId + "::" + cueIndex; }
 
-  /* ---------------- cloud-shared recordings (Firestore, no SDK) ----------------
+  /* ---------------- cloud-shared recordings (Firestore REST, no SDK) ----------------
      Recording locally only ever reaches the device that made it. To let anyone
-     who opens the page hear a line recorded moments ago on someone else's phone,
-     every stop-recording also uploads the clip (as base64) to a Firestore
-     document, and every playback checks Firestore first. Plain REST + fetch()
-     is used instead of the Firebase SDK so this stays a single static file with
-     no build step. The API key below is a public client identifier, not a
-     secret — Firestore access is actually gated by the security rules on the
-     "recordings" collection, not by hiding this key. */
+     who opens the page hear a line recorded moments ago on another cast member's
+     phone, each take is also written to a public Firestore collection as base64.
+
+     The API key below is intentionally in the client — that is how Firebase web
+     apps work, it identifies the project rather than authorising anything.
+     Access is gated by the security rules on the "recordings" collection, which
+     require every written document to carry an `audio` string.
+
+     Firestore caps one document at 1MiB *including* field names and overhead,
+     and base64 inflates audio by 4/3. A take of any length of high-bitrate
+     iPhone audio blows straight past that, and the upload used to fail silently
+     and lose the recording. So audio is split across as many part documents as
+     it needs, and the metadata document that points at them is written last — a
+     half-uploaded take is therefore never visible to anyone. */
   var FIREBASE_PROJECT_ID = "happy-shape";
   var FIREBASE_API_KEY = "AIzaSyBY_4d4k08M_HOOJgG2ZqPoCElaeaUMw2o";
   var FIRESTORE_RECORDINGS_URL =
     "https://firestore.googleapis.com/v1/projects/" + FIREBASE_PROJECT_ID + "/databases/(default)/documents/recordings";
 
+  var CLOUD_CHUNK_CHARS = 700000;   // base64 chars per part document, well inside the 1MiB cap
+  var CLOUD_MAX_PARTS = 24;         // runaway guard: ~12MB of audio, far beyond any single line
+  var UPLOAD_RETRY_DELAYS = [1200, 3500, 9000];
+
   function cloudDocId(scriptId, cueIndex){
     return scriptId.replace(/[^A-Za-z0-9_-]/g, "_") + "_" + cueIndex;
   }
+  function cloudPartDocId(docId, part){ return docId + "__p" + part; }
+
+  function sleep(ms){ return new Promise(function(resolve){ setTimeout(resolve, ms); }); }
 
   function blobToBase64(blob){
     return new Promise(function(resolve, reject){
       var reader = new FileReader();
       reader.onloadend = function(){
-        var result = reader.result; // "data:<mime>;base64,<data>"
+        var result = String(reader.result); // "data:<mime>;base64,<data>"
         var comma = result.indexOf(",");
         resolve(comma >= 0 ? result.slice(comma + 1) : result);
       };
-      reader.onerror = function(){ reject(reader.error); };
+      reader.onerror = function(){ reject(reader.error || new Error("read-failed")); };
       reader.readAsDataURL(blob);
     });
   }
@@ -1298,53 +1510,165 @@
     return new Blob([bytes], { type: mimeType });
   }
 
-  // Best-effort, fire-and-forget: the recording is already safe in this
-  // device's own IndexedDB regardless of whether the upload succeeds, so a
-  // failure here (offline, quota, etc.) is swallowed rather than surfaced.
-  function uploadRecordingToCloud(scriptId, cueIndex, character, blob){
-    blobToBase64(blob).then(function(base64){
-      var docId = cloudDocId(scriptId, cueIndex);
-      var body = {
-        fields: {
-          audio: { stringValue: base64 },
+  function codedError(code){
+    var e = new Error(code);
+    e.code = code;
+    return e;
+  }
+
+  // A transient failure (offline, rate limit, Firestore hiccup) is retried with
+  // backoff instead of being swallowed; anything else is reported so the caller
+  // can tell the user their recording is not shared yet.
+  function writeCloudDoc(docId, fields, attempt, onRetry){
+    attempt = attempt || 0;
+    var url = FIRESTORE_RECORDINGS_URL + "/" + encodeURIComponent(docId) + "?key=" + FIREBASE_API_KEY;
+    return fetch(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: fields })
+    }).then(function(res){
+      if (res.ok) return true;
+      var retriable = res.status === 408 || res.status === 429 || res.status >= 500;
+      if (retriable && attempt < UPLOAD_RETRY_DELAYS.length){
+        if (onRetry) onRetry(attempt + 1);
+        return sleep(UPLOAD_RETRY_DELAYS[attempt]).then(function(){
+          return writeCloudDoc(docId, fields, attempt + 1, onRetry);
+        });
+      }
+      throw codedError(res.status === 400 || res.status === 403 ? "rejected" : "http-" + res.status);
+    }, function(){
+      // network-level failure: no response at all
+      if (attempt < UPLOAD_RETRY_DELAYS.length){
+        if (onRetry) onRetry(attempt + 1);
+        return sleep(UPLOAD_RETRY_DELAYS[attempt]).then(function(){
+          return writeCloudDoc(docId, fields, attempt + 1, onRetry);
+        });
+      }
+      throw codedError("offline");
+    });
+  }
+
+  function deleteCloudDoc(docId){
+    var url = FIRESTORE_RECORDINGS_URL + "/" + encodeURIComponent(docId) + "?key=" + FIREBASE_API_KEY;
+    return fetch(url, { method: "DELETE" }).catch(function(){ /* best effort */ });
+  }
+
+  function readCloudDoc(docId, timeoutMs){
+    var controller = new AbortController();
+    var timer = setTimeout(function(){ controller.abort(); }, timeoutMs || 8000);
+    var url = FIRESTORE_RECORDINGS_URL + "/" + encodeURIComponent(docId) + "?key=" + FIREBASE_API_KEY;
+    return fetch(url, { signal: controller.signal }).then(function(res){
+      clearTimeout(timer);
+      if (res.status === 404) return null;
+      if (!res.ok) throw codedError("http-" + res.status);
+      return res.json();
+    }, function(err){
+      clearTimeout(timer);
+      throw err;
+    });
+  }
+
+  // Parts first, metadata last. Resolves once the whole take is readable by
+  // everyone; rejects with a .code the UI turns into a plain-Japanese reason.
+  function uploadRecordingToCloud(scriptId, cueIndex, character, blob, takenAt, onRetry){
+    var docId = cloudDocId(scriptId, cueIndex);
+    return blobToBase64(blob).then(function(base64){
+      var partCount = Math.max(1, Math.ceil(base64.length / CLOUD_CHUNK_CHARS));
+      if (partCount > CLOUD_MAX_PARTS) throw codedError("too-large");
+
+      var writes = [];
+      for (var i = 0; i < partCount; i++){
+        writes.push({
+          id: cloudPartDocId(docId, i),
+          fields: {
+            audio: { stringValue: base64.slice(i * CLOUD_CHUNK_CHARS, (i + 1) * CLOUD_CHUNK_CHARS) },
+            part: { integerValue: String(i) },
+            of: { integerValue: String(partCount) },
+            updatedAt: { integerValue: String(takenAt) }
+          }
+        });
+      }
+      // Sequential rather than parallel: a phone on a weak connection pushing
+      // several hundred KB at once is how these writes were timing out.
+      return writes.reduce(function(chain, w){
+        return chain.then(function(){ return writeCloudDoc(w.id, w.fields, 0, onRetry); });
+      }, Promise.resolve()).then(function(){
+        return writeCloudDoc(docId, {
+          audio: { stringValue: "" },          // the security rules require this field on every document
+          parts: { integerValue: String(partCount) },
           contentType: { stringValue: blob.type || "audio/webm" },
           character: { stringValue: character || "" },
-          updatedAt: { integerValue: String(Date.now()) }
-        }
-      };
-      return fetch(FIRESTORE_RECORDINGS_URL + "/" + encodeURIComponent(docId) + "?key=" + FIREBASE_API_KEY, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
-    }).catch(function(){ /* ignore: local copy already saved */ });
+          bytes: { integerValue: String(blob.size || 0) },
+          deleted: { booleanValue: false },
+          updatedAt: { integerValue: String(takenAt) }
+        });
+      }).then(function(){ return { parts: partCount }; });
+    });
   }
 
-  async function fetchCloudRecording(scriptId, cueIndex){
+  function numField(fields, name){
+    var f = fields && fields[name];
+    if (!f) return null;
+    if (f.integerValue !== undefined) return parseInt(f.integerValue, 10);
+    if (f.doubleValue !== undefined) return Number(f.doubleValue);
+    return null;
+  }
+
+  // Returns null (nothing shared), {deleted:true, updatedAt} for a line that was
+  // deleted for everyone, or {blob, contentType, updatedAt} for a shared take.
+  function fetchCloudDoc(scriptId, cueIndex){
     var docId = cloudDocId(scriptId, cueIndex);
-    var controller = new AbortController();
-    var timer = setTimeout(function(){ controller.abort(); }, 4000);
-    try {
-      var res = await fetch(FIRESTORE_RECORDINGS_URL + "/" + encodeURIComponent(docId) + "?key=" + FIREBASE_API_KEY, { signal: controller.signal });
-      clearTimeout(timer);
-      if (!res.ok) return null;
-      var doc = await res.json();
-      var audioField = doc.fields && doc.fields.audio && doc.fields.audio.stringValue;
-      if (!audioField) return null;
-      var contentType = (doc.fields.contentType && doc.fields.contentType.stringValue) || "audio/webm";
-      return base64ToBlob(audioField, contentType);
-    } catch (e){
-      clearTimeout(timer);
-      return null;
-    }
+    return readCloudDoc(docId).then(function(doc){
+      if (!doc || !doc.fields) return null;
+      var f = doc.fields;
+      var updatedAt = numField(f, "updatedAt") || 0;
+      if (f.deleted && f.deleted.booleanValue === true) return { deleted: true, updatedAt: updatedAt };
+
+      var contentType = (f.contentType && f.contentType.stringValue) || "audio/webm";
+      var parts = numField(f, "parts");
+
+      if (parts && parts > 0){
+        var ids = [];
+        for (var i = 0; i < parts; i++) ids.push(cloudPartDocId(docId, i));
+        return Promise.all(ids.map(function(id){ return readCloudDoc(id, 20000); })).then(function(docs){
+          var base64 = "";
+          for (var j = 0; j < docs.length; j++){
+            var pf = docs[j] && docs[j].fields;
+            var chunk = pf && pf.audio && pf.audio.stringValue;
+            if (typeof chunk !== "string") return null; // an incomplete set is not playable
+            base64 += chunk;
+          }
+          if (!base64) return null;
+          return { blob: base64ToBlob(base64, contentType), contentType: contentType, updatedAt: updatedAt };
+        });
+      }
+
+      // Legacy single-document format, from before audio was split into parts.
+      var inline = f.audio && f.audio.stringValue;
+      if (!inline) return null;
+      return { blob: base64ToBlob(inline, contentType), contentType: contentType, updatedAt: updatedAt };
+    });
   }
 
-  // Best-effort: called for every delete regardless of whether a cloud copy
-  // is known to exist, so a missing document is not treated as a failure.
+  // Deleting writes a tombstone rather than removing the document, on purpose: a
+  // pre-baked file in the deployed recordings/ folder for the same line would
+  // otherwise resurface and look exactly like "the recording I just deleted came
+  // back". The part documents are then swept away to reclaim the space.
   function deleteCloudRecording(scriptId, cueIndex){
     var docId = cloudDocId(scriptId, cueIndex);
-    return fetch(FIRESTORE_RECORDINGS_URL + "/" + encodeURIComponent(docId) + "?key=" + FIREBASE_API_KEY, { method:"DELETE" })
-      .catch(function(){ /* ignore */ });
+    return readCloudDoc(docId).catch(function(){ return null; }).then(function(doc){
+      var parts = doc && doc.fields ? numField(doc.fields, "parts") : null;
+      return writeCloudDoc(docId, {
+        audio: { stringValue: "" },
+        parts: { integerValue: "0" },
+        deleted: { booleanValue: true },
+        updatedAt: { integerValue: String(Date.now()) }
+      }).then(function(){
+        var sweeps = [];
+        for (var i = 0; i < (parts || 0); i++) sweeps.push(deleteCloudDoc(cloudPartDocId(docId, i)));
+        return Promise.all(sweeps);
+      });
+    }).catch(function(){ /* best effort: the local copy is removed regardless */ });
   }
 
   function getDB(){
@@ -1414,7 +1738,11 @@
     return dbPromise;
   }
 
-  function saveRecording(cueIndex, character, blob){
+  // Every row carries the moment the take was made. That one timestamp is what
+  // lets "newest take wins" be decided without guessing: it is written here and
+  // sent as the cloud document's updatedAt, so the same take compares equal on
+  // both sides and only a genuinely newer take supersedes anything.
+  function saveRecording(cueIndex, character, blob, takenAt, cloudSynced){
     return getDB().then(function(db){
       return new Promise(function(resolve, reject){
         var tx = db.transaction("recordings","readwrite");
@@ -1423,7 +1751,9 @@
           scriptId: currentScriptId,
           cueIndex: cueIndex,
           character: character,
-          blob: blob
+          blob: blob,
+          updatedAt: takenAt,
+          cloudSynced: !!cloudSynced
         });
         tx.oncomplete = function(){ resolve(); };
         tx.onerror = function(){ reject(tx.error); };
@@ -1453,96 +1783,59 @@
     });
   }
 
-  /* ---------------- microphone recording ---------------- */
-  var mediaStream = null;
-  var mediaRecorder = null;
-  var recordedChunks = [];
-  var recordingCueIndex = null;
-  var currentRecordSource = null; // "local" | "cloud" | "static" | null — what updateRecordUI last found for the displayed line
-
-  function startRecording(){
-    if (!recordingSupported || !CUES[state.idx]) return;
-    recordingCueIndex = state.idx;
-    navigator.mediaDevices.getUserMedia({ audio:true }).then(function(stream){
-      mediaStream = stream;
-      recordedChunks = [];
-      // A speech-appropriate low bitrate keeps each line's upload small — well
-      // under both Firestore's 1MiB document cap and the "recordings" collection's
-      // security-rule size limit — without any audible quality loss for dialogue.
-      try { mediaRecorder = new MediaRecorder(stream, { audioBitsPerSecond: 32000 }); }
-      catch (e){ mediaRecorder = new MediaRecorder(stream); }
-      mediaRecorder.ondataavailable = function(e){ if (e.data && e.data.size) recordedChunks.push(e.data); };
-      mediaRecorder.onstop = function(){
-        var blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "audio/webm" });
-        if (mediaStream){ mediaStream.getTracks().forEach(function(t){ t.stop(); }); mediaStream = null; }
-        if (blob.size > 0 && recordingCueIndex !== null && CUES[recordingCueIndex]){
-          var savedCueIndex = recordingCueIndex;
-          var savedCharacter = CUES[savedCueIndex].character;
-          saveRecording(savedCueIndex, savedCharacter, blob).then(function(){
-            updateRecordUI();
-            triggerBlobDownload(blob, savedCueIndex); // stop = save locally + hand you the file to upload, no extra click
-          });
-          uploadRecordingToCloud(currentScriptId, savedCueIndex, savedCharacter, blob); // shares it live with anyone else who opens the page
-        } else {
-          updateRecordUI();
-        }
-      };
-      mediaRecorder.start();
-      updateRecordUI();
-    }).catch(function(){
-      recordStatusEl.textContent = "マイクにアクセスできませんでした（権限やhttps接続を確認してください）";
-      recordingCueIndex = null;
+  function getAllRecordings(){
+    return getDB().then(function(db){
+      return new Promise(function(resolve, reject){
+        var req = db.transaction("recordings","readonly").objectStore("recordings").getAll();
+        req.onsuccess = function(){ resolve(req.result || []); };
+        req.onerror = function(){ reject(req.error); };
+      });
     });
   }
 
-  function stopRecording(){
-    if (mediaRecorder && mediaRecorder.state === "recording") mediaRecorder.stop();
+  function markCloudSynced(scriptId, cueIndex){
+    return getDB().then(function(db){
+      return new Promise(function(resolve, reject){
+        var tx = db.transaction("recordings","readwrite");
+        var store = tx.objectStore("recordings");
+        var key = recordingKey(scriptId, cueIndex);
+        store.get(key).onsuccess = function(ev){
+          var row = ev.target.result;
+          if (row){ row.cloudSynced = true; store.put(row); }
+        };
+        tx.oncomplete = function(){ resolve(); };
+        tx.onerror = function(){ reject(tx.error); };
+      });
+    });
   }
 
-  function abortActiveRecording(){
-    if (mediaRecorder && mediaRecorder.state === "recording"){
-      mediaRecorder.ondataavailable = null;
-      mediaRecorder.onstop = function(){
-        if (mediaStream){ mediaStream.getTracks().forEach(function(t){ t.stop(); }); mediaStream = null; }
-      };
-      mediaRecorder.stop();
-    }
-    mediaRecorder = null;
-    recordingCueIndex = null;
-  }
-
-  var recordRowEl = document.getElementById("record-row");
-  var recordStatusEl = document.getElementById("record-status");
-  var recStartBtn = document.getElementById("rec-start-btn");
-  var recStopBtn = document.getElementById("rec-stop-btn");
-  var recShareBtn = document.getElementById("rec-share-btn");
-  var recDeleteBtn = document.getElementById("rec-delete-btn");
-
-  /* ---------------- shared recordings (fetched from a "recordings/" folder next to this page) ---------------- */
+  /* ---------------- one recording per line ----------------
+     The status text and playback used to decide independently which copy of a
+     line to use — the status preferred this device's copy, playback preferred
+     the shared one — so a line could announce one take and play another, and two
+     overlapping async lookups could start two of them at once. Both now go
+     through resolveRecording(), which returns exactly one take: the newest one.
+     Whatever it supersedes is deleted, so re-recording a line replaces the old
+     audio for everyone instead of leaving a second take on the same line. */
   var SHARED_EXTS = ["webm","mp4","m4a","ogg","wav"];
-  var sharedMissCache = {}; // cueIndex -> true, once confirmed absent (avoids re-fetching every time)
+  var sharedMissCache = {};   // "scriptId::cueIndex" -> true, once confirmed absent
+  var resolvedCache = {};     // cueIndex -> Promise<{blob,source,updatedAt}|null>
 
-  async function fetchSharedRecording(cueIndex){
-    // Live shared recordings (uploaded moments ago by anyone on any device) take
-    // priority over the static "recordings/" folder below, which only ever holds
-    // whatever was baked into the deployed site ahead of time.
-    var cloudBlob = await fetchCloudRecording(currentScriptId, cueIndex);
-    if (cloudBlob) return cloudBlob;
-
-    return await fetchStaticRecording(cueIndex);
+  function invalidateResolved(cueIndex){
+    if (cueIndex === undefined) resolvedCache = {};
+    else delete resolvedCache[cueIndex];
   }
 
   // The pre-baked "recordings/" folder shipped with the deployed site — these
   // files aren't deletable from the app itself (that would need editing the
-  // repo), unlike a Firestore-backed cloud recording.
-  async function fetchStaticRecording(cueIndex){
+  // repo), unlike a Firestore-backed cloud recording, so a cloud tombstone is
+  // what suppresses them.
+  function fetchStaticRecording(cueIndex){
     var missKey = currentScriptId + "::" + cueIndex;
-    if (sharedMissCache[missKey]) return null;
-    // probe all known extensions in parallel — takes one round-trip, not up to five in a row.
-    // each probe is aborted after 2.5s so a stalled/slow network (common on mobile data)
-    // can never leave playback hanging indefinitely waiting on this check.
-    // path is scoped under the script's own folder so multiple imported scripts'
-    // shared recordings never collide.
+    if (sharedMissCache[missKey]) return Promise.resolve(null);
+    // probe all known extensions in parallel — one round-trip, not up to five in
+    // a row. Each probe is aborted after 2.5s so a stalled/slow network (common
+    // on mobile data) can never leave playback hanging on this check.
     var attempts = SHARED_EXTS.map(function(ext){
       var controller = new AbortController();
       var timer = setTimeout(function(){ controller.abort(); }, 2500);
@@ -1555,37 +1848,254 @@
         function(err){ clearTimeout(timer); throw err; }
       );
     });
-    try {
-      return await Promise.any(attempts);
-    } catch (e){
+    return Promise.any(attempts).catch(function(){
       sharedMissCache[missKey] = true;
       return null;
+    });
+  }
+
+  function resolveRecording(cueIndex){
+    if (resolvedCache[cueIndex]) return resolvedCache[cueIndex];
+    var scriptIdAtCall = currentScriptId;
+    var pr = Promise.all([
+      loadRecording(cueIndex).catch(function(){ return null; }),
+      fetchCloudDoc(scriptIdAtCall, cueIndex).catch(function(){ return null; })
+    ]).then(function(pair){
+      var local = pair[0], cloud = pair[1];
+      var localAt = local ? (local.updatedAt || 0) : -1;
+      var cloudAt = cloud ? (cloud.updatedAt || 0) : -1;
+
+      if (cloud && cloud.deleted){
+        // Deleted for everyone. Drop this device's leftover copy of the same (or
+        // older) take, and do not fall back to a pre-baked file for the line.
+        if (local && localAt <= cloudAt){
+          deleteRecording(cueIndex).catch(function(){ /* ignore */ });
+          return null;
+        }
+        if (local) return { blob: local.blob, source: local.cloudSynced === false ? "local-unsynced" : "local", updatedAt: localAt };
+        return null;
+      }
+
+      if (cloud && cloud.blob && cloudAt > localAt){
+        // A newer take by someone else supersedes whatever this device kept.
+        if (local) deleteRecording(cueIndex).catch(function(){ /* ignore */ });
+        return { blob: cloud.blob, source: "cloud", updatedAt: cloudAt };
+      }
+      if (local && local.blob){
+        return { blob: local.blob, source: local.cloudSynced === false ? "local-unsynced" : "local", updatedAt: localAt };
+      }
+      if (cloud && cloud.blob){
+        return { blob: cloud.blob, source: "cloud", updatedAt: cloudAt };
+      }
+      return fetchStaticRecording(cueIndex).then(function(b){
+        return b ? { blob: b, source: "static", updatedAt: 0 } : null;
+      });
+    }).catch(function(){ return null; });
+    resolvedCache[cueIndex] = pr;
+    return pr;
+  }
+
+  /* ---------------- microphone recording ---------------- */
+  var recordRowEl = document.getElementById("record-row");
+  var recordStatusEl = document.getElementById("record-status");
+  var recTimerEl = document.getElementById("rec-timer");
+  var recToggleBtn = document.getElementById("rec-toggle-btn");
+  var recStartBtn = document.getElementById("rec-start-btn");
+  var recStopBtn = document.getElementById("rec-stop-btn");
+  var recRetryBtn = document.getElementById("rec-retry-btn");
+  var recDeleteBtn = document.getElementById("rec-delete-btn");
+
+  var mediaStream = null;
+  var mediaRecorder = null;
+  var recordedChunks = [];
+  var recordingCueIndex = null;
+  var recordStartedAt = 0;
+  var recordTimerId = null;
+  var recordAutoStopId = null;
+  var autoStoppedForLength = false;
+  var saveStateByCue = {};    // cueIndex -> {state:"saving"|"saved"|"failed", code}
+  var savedFlashTimer = null;
+  var inFlightSaves = 0;
+
+  // A forgotten recording would otherwise run until the tab is closed and then
+  // try to upload the whole thing; five minutes is far longer than any single
+  // line and short enough to stay well inside what the upload can carry.
+  var RECORD_HARD_LIMIT_MS = 300000;
+
+  function stopMicStream(){
+    if (mediaStream){
+      mediaStream.getTracks().forEach(function(t){ t.stop(); });
+      mediaStream = null;
     }
   }
 
-  function extensionForMime(mime){
-    if (mime && mime.indexOf("mp4") !== -1) return "mp4";
-    if (mime && mime.indexOf("ogg") !== -1) return "ogg";
-    if (mime && mime.indexOf("wav") !== -1) return "wav";
-    return "webm";
+  function formatClock(ms){
+    var total = Math.max(0, Math.floor(ms / 1000));
+    return Math.floor(total / 60) + ":" + ("0" + (total % 60)).slice(-2);
   }
 
-  function triggerBlobDownload(blob, cueIndex){
-    var ext = extensionForMime(blob.type);
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement("a");
-    a.href = url;
-    a.download = cueIndex + "." + ext;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+  function startRecordTimer(){
+    recordStartedAt = Date.now();
+    recTimerEl.textContent = "0:00";
+    if (recordTimerId) clearInterval(recordTimerId);
+    recordTimerId = setInterval(function(){
+      recTimerEl.textContent = formatClock(Date.now() - recordStartedAt);
+    }, 250);
   }
 
-  function downloadRecordingForSharing(cueIndex){
-    loadRecording(cueIndex).then(function(rec){
-      if (rec && rec.blob) triggerBlobDownload(rec.blob, cueIndex);
+  function stopRecordTimer(){
+    if (recordTimerId){ clearInterval(recordTimerId); recordTimerId = null; }
+    if (recordAutoStopId){ clearTimeout(recordAutoStopId); recordAutoStopId = null; }
+    recTimerEl.textContent = "";
+  }
+
+  function setSaveState(cueIndex, stateName, code, attempt){
+    if (stateName === null) delete saveStateByCue[cueIndex];
+    else saveStateByCue[cueIndex] = { state: stateName, code: code || null, attempt: attempt || 0 };
+    if (savedFlashTimer){ clearTimeout(savedFlashTimer); savedFlashTimer = null; }
+    if (stateName === "saved"){
+      // Reassure, then fall back to the normal "shared recording" status so the
+      // message can never go stale after someone else re-records the line.
+      savedFlashTimer = setTimeout(function(){
+        savedFlashTimer = null;
+        delete saveStateByCue[cueIndex];
+        updateRecordUI();
+      }, 6000);
+    }
+    if (state.idx === cueIndex) updateRecordUI();
+  }
+
+  function failureMessage(code){
+    if (code === "too-large") return "⚠ 録音が長すぎて共有できません（この端末には保存済み）。短く録り直してください";
+    if (code === "offline")   return "⚠ 通信できず共有できていません（この端末には保存済み）。電波の良い場所で「再送」を押してください";
+    if (code === "rejected")  return "⚠ 共有が拒否されました（この端末には保存済み）。「再送」でもう一度試してください";
+    return "⚠ 共有の保存に失敗（この端末には保存済み）。「再送」を押してください";
+  }
+
+  // Stopping is the save. Nothing waits for "next line" — that used to be the
+  // assumption, and a take could sit unsaved until a button that was never
+  // pressed. Local copy first (so the take survives whatever the network does),
+  // then the shared upload, with the progress and any failure said out loud in
+  // the status line instead of being swallowed.
+  function persistTake(cueIndex, character, blob, takenAt){
+    invalidateResolved(cueIndex);
+    setSaveState(cueIndex, "saving");
+    inFlightSaves++;
+    var localOk = false;
+
+    return saveRecording(cueIndex, character, blob, takenAt, false).then(function(){
+      localOk = true;
+      // Seed the resolver so tapping the status to listen back is instant and
+      // needs no network at all.
+      resolvedCache[cueIndex] = Promise.resolve({ blob: blob, source: "local-unsynced", updatedAt: takenAt });
+    }, function(){
+      /* IndexedDB blocked (private mode): the upload below is then the only copy */
+    }).then(function(){
+      return uploadRecordingToCloud(currentScriptId, cueIndex, character, blob, takenAt, function(attempt){
+        if (saveStateByCue[cueIndex] && saveStateByCue[cueIndex].state === "saving"){
+          setSaveState(cueIndex, "saving", null, attempt);
+        }
+      });
+    }).then(function(){
+      if (localOk) return markCloudSynced(currentScriptId, cueIndex).catch(function(){ /* ignore */ });
+    }).then(function(){
+      resolvedCache[cueIndex] = Promise.resolve({ blob: blob, source: "cloud", updatedAt: takenAt });
+      setSaveState(cueIndex, "saved");
+    }).catch(function(err){
+      setSaveState(cueIndex, "failed", err && err.code);
+    }).then(function(){
+      inFlightSaves = Math.max(0, inFlightSaves - 1);
     });
+  }
+
+  function startRecording(){
+    if (!recordingSupported || !CUES[state.idx]) return;
+    if (mediaRecorder && mediaRecorder.state === "recording") return;
+    var cueIndex = state.idx;
+    recordingCueIndex = cueIndex;
+    autoStoppedForLength = false;
+    setSaveState(cueIndex, null);
+    recordStatusEl.textContent = "マイクの準備中…";
+    navigator.mediaDevices.getUserMedia({ audio:true }).then(function(stream){
+      mediaStream = stream;
+      recordedChunks = [];
+      // A speech-appropriate low bitrate keeps each line's upload small. iOS
+      // ignores the hint and picks its own, which is why the upload path splits
+      // audio into parts rather than assuming any particular size.
+      try { mediaRecorder = new MediaRecorder(stream, { audioBitsPerSecond: 32000 }); }
+      catch (e){ mediaRecorder = new MediaRecorder(stream); }
+
+      mediaRecorder.ondataavailable = function(e){ if (e.data && e.data.size) recordedChunks.push(e.data); };
+      mediaRecorder.onstop = function(){
+        var blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "audio/webm" });
+        stopMicStream();
+        stopRecordTimer();
+        var savedCueIndex = recordingCueIndex;
+        recordingCueIndex = null;
+        recordRowEl.classList.remove("recording");
+
+        if (!(blob.size > 0 && savedCueIndex !== null && CUES[savedCueIndex])){
+          updateRecordUI();
+          return;
+        }
+        persistTake(savedCueIndex, CUES[savedCueIndex].character, blob, Date.now());
+      };
+
+      mediaRecorder.start();
+      startRecordTimer();
+      recordAutoStopId = setTimeout(function(){
+        autoStoppedForLength = true;
+        stopRecording();
+      }, RECORD_HARD_LIMIT_MS);
+      updateRecordUI();
+    }).catch(function(){
+      recordingCueIndex = null;
+      stopRecordTimer();
+      recordStatusEl.className = "record-status failed";
+      recordStatusEl.textContent = "⚠ マイクを使えませんでした。ブラウザのマイク許可を確認してください";
+    });
+  }
+
+  function stopRecording(){
+    if (mediaRecorder && mediaRecorder.state === "recording") mediaRecorder.stop();
+  }
+
+  function abortActiveRecording(){
+    if (mediaRecorder && mediaRecorder.state === "recording"){
+      mediaRecorder.ondataavailable = null;
+      mediaRecorder.onstop = function(){ stopMicStream(); };
+      mediaRecorder.stop();
+    }
+    stopRecordTimer();
+    stopMicStream();
+    mediaRecorder = null;
+    recordingCueIndex = null;
+    recordRowEl.classList.remove("recording");
+  }
+
+  // A take that never reached Firestore stays in IndexedDB flagged unsynced.
+  // This drains that backlog: on load, when the connection comes back, and from
+  // the explicit "再送" button.
+  function flushPendingUploads(){
+    return getAllRecordings().then(function(rows){
+      var pending = rows.filter(function(r){ return r.cloudSynced === false && r.blob; });
+      return pending.reduce(function(chain, row){
+        return chain.then(function(){
+          return uploadRecordingToCloud(row.scriptId, row.cueIndex, row.character, row.blob, row.updatedAt || Date.now())
+            .then(function(){
+              return markCloudSynced(row.scriptId, row.cueIndex).catch(function(){ /* ignore */ });
+            })
+            .then(function(){
+              if (row.scriptId === currentScriptId){
+                invalidateResolved(row.cueIndex);
+                if (saveStateByCue[row.cueIndex]) setSaveState(row.cueIndex, "saved");
+                else if (state.idx === row.cueIndex) updateRecordUI();
+              }
+            })
+            .catch(function(){ /* stays pending for the next attempt */ });
+        });
+      }, Promise.resolve());
+    }).catch(function(){ /* storage unavailable */ });
   }
 
   function updateRecordUI(){
@@ -1596,116 +2106,250 @@
     if (!showRow) return;
 
     if (!recordingSupported){
+      recordStatusEl.className = "record-status";
       recordStatusEl.textContent = "この端末・ブラウザは録音に対応していません";
-      recordStatusEl.classList.remove("has-audio");
-      recStartBtn.disabled = true; recStopBtn.disabled = true; recShareBtn.disabled = true; recDeleteBtn.disabled = true;
+      recToggleBtn.disabled = true; recStartBtn.disabled = true; recStopBtn.disabled = true;
+      recDeleteBtn.disabled = true; recRetryBtn.style.display = "none";
       recordRowEl.classList.remove("recording");
       return;
     }
 
     var recording = mediaRecorder && mediaRecorder.state === "recording" && recordingCueIndex === idxAtCall;
+    recToggleBtn.disabled = false;
+    recToggleBtn.textContent = recording ? "■ 停止して保存" : "● 録音する";
+    recToggleBtn.setAttribute("data-state", recording ? "recording" : "idle");
     recStartBtn.disabled = recording;
     recStopBtn.disabled = !recording;
     recordRowEl.classList.toggle("recording", recording);
 
     if (recording){
-      recordStatusEl.textContent = "録音中…";
-      recordStatusEl.classList.remove("has-audio");
-      recShareBtn.disabled = true; recDeleteBtn.disabled = true;
+      recordStatusEl.className = "record-status";
+      recordStatusEl.textContent = "録音中…（読み終えたら「停止して保存」）";
+      recRetryBtn.style.display = "none";
+      recDeleteBtn.disabled = true;
       return;
     }
 
-    recShareBtn.disabled = true; recDeleteBtn.disabled = true;
-    recordStatusEl.classList.remove("has-audio");
-    recordStatusEl.textContent = "確認中…";
+    var save = saveStateByCue[idxAtCall];
+    if (save && save.state === "saving"){
+      recordStatusEl.className = "record-status saving";
+      recordStatusEl.textContent = save.attempt
+        ? "保存中…通信が不安定なため再試行しています（" + save.attempt + "回目）"
+        : "保存中…（このままお待ちください）";
+      recRetryBtn.style.display = "none";
+      recDeleteBtn.disabled = true;
+      return;
+    }
+    if (save && save.state === "failed"){
+      recordStatusEl.className = "record-status failed";
+      recordStatusEl.textContent = failureMessage(save.code);
+      recRetryBtn.style.display = "";
+      recDeleteBtn.disabled = false;
+      return;
+    }
+    if (save && save.state === "saved"){
+      recordStatusEl.className = "record-status saved has-audio";
+      recordStatusEl.textContent = "✓ 保存しました。全員が聞けます（タップで試聴）";
+      recRetryBtn.style.display = "none";
+      recDeleteBtn.disabled = false;
+      return;
+    }
 
-    currentRecordSource = null;
-    loadRecording(idxAtCall).then(function(rec){
+    recordStatusEl.className = "record-status";
+    recordStatusEl.textContent = autoStoppedForLength ? "録音が長すぎたため自動で停止しました" : "確認中…";
+    recRetryBtn.style.display = "none";
+    recDeleteBtn.disabled = true;
+
+    resolveRecording(idxAtCall).then(function(found){
       if (state.idx !== idxAtCall) return; // stale response, line already changed
-      if (rec){
-        currentRecordSource = "local";
-        recordStatusEl.textContent = "🔊 録音あり（クリックで試聴）";
-        recordStatusEl.classList.add("has-audio");
-        recShareBtn.disabled = false;
+      if (!found){
+        recordStatusEl.className = "record-status";
+        recordStatusEl.textContent = "未録音";
+        return;
+      }
+      if (found.source === "local-unsynced"){
+        recordStatusEl.className = "record-status failed has-audio";
+        recordStatusEl.textContent = "⚠ この端末にのみ保存（未共有・タップで試聴）";
+        recRetryBtn.style.display = "";
         recDeleteBtn.disabled = false;
         return;
       }
-      fetchCloudRecording(currentScriptId, idxAtCall).then(function(cloudBlob){
-        if (state.idx !== idxAtCall) return;
-        if (cloudBlob){
-          currentRecordSource = "cloud";
-          recordStatusEl.textContent = "☁️ 共有録音あり（クリックで試聴・削除も可）";
-          recordStatusEl.classList.add("has-audio");
-          recDeleteBtn.disabled = false; // a Firestore-backed recording can be removed for everyone
-          return;
-        }
-        fetchStaticRecording(idxAtCall).then(function(blob){
-          if (state.idx !== idxAtCall) return;
-          if (blob){
-            currentRecordSource = "static";
-            recordStatusEl.textContent = "☁️ 共有録音あり（クリックで試聴）";
-            recordStatusEl.classList.add("has-audio");
-            // not deletable from the app: baked into the deployed site's files
-          } else {
-            recordStatusEl.textContent = "未録音";
-            recordStatusEl.classList.remove("has-audio");
-          }
-        });
-      });
-    }).catch(function(){
-      if (state.idx === idxAtCall) recordStatusEl.textContent = "未録音";
+      if (found.source === "static"){
+        // baked into the deployed site's files: not deletable from the app
+        recordStatusEl.className = "record-status has-audio";
+        recordStatusEl.textContent = "☁ 共有録音あり（タップで試聴）";
+        recDeleteBtn.disabled = false;
+        return;
+      }
+      recordStatusEl.className = "record-status has-audio";
+      recordStatusEl.textContent = found.source === "cloud"
+        ? "☁ 共有録音あり（タップで試聴・削除も可）"
+        : "🔊 録音あり（タップで試聴）";
+      recDeleteBtn.disabled = false;
     });
   }
 
+  function toggleRecording(){
+    primeSpeechSynthesis();
+    if (mediaRecorder && mediaRecorder.state === "recording") stopRecording();
+    else startRecording();
+  }
+
+  recToggleBtn.addEventListener("click", toggleRecording);
   recStartBtn.addEventListener("click", startRecording);
   recStopBtn.addEventListener("click", stopRecording);
-  recShareBtn.addEventListener("click", function(){ downloadRecordingForSharing(state.idx); });
-  recDeleteBtn.addEventListener("click", function(){
+
+  recRetryBtn.addEventListener("click", function(){
     var idx = state.idx;
-    // Always attempt both: harmless if one side has nothing to delete, and
-    // avoids leaving a stray copy behind on whichever side wasn't checked.
-    Promise.all([ deleteRecording(idx), deleteCloudRecording(currentScriptId, idx) ])
-      .then(updateRecordUI, updateRecordUI);
-  });
-  recordStatusEl.addEventListener("click", function(){
-    if (!recordStatusEl.classList.contains("has-audio")) return;
-    var idx = state.idx;
-    loadRecording(idx).then(function(rec){
-      if (rec && rec.blob){ playBlob(rec.blob); return; }
-      fetchSharedRecording(idx).then(function(blob){ if (blob) playBlob(blob); });
+    setSaveState(idx, "saving");
+    flushPendingUploads().then(function(){
+      if (saveStateByCue[idx] && saveStateByCue[idx].state === "saving"){
+        // still unsynced after the attempt
+        loadRecording(idx).then(function(row){
+          if (row && row.cloudSynced) setSaveState(idx, "saved");
+          else setSaveState(idx, "failed", "offline");
+        }, function(){ setSaveState(idx, "failed", "offline"); });
+      }
     });
   });
 
-  /* ---------------- playback (shared recording → local recording → TTS) ---------------- */
-  var currentPlaybackAudio = null;
+  recDeleteBtn.addEventListener("click", function(){
+    var idx = state.idx;
+    if (!confirm("このセリフの録音を削除しますか？（全員の分が消えます）")) return;
+    setSaveState(idx, null);
+    invalidateResolved(idx);
+    recordStatusEl.className = "record-status";
+    recordStatusEl.textContent = "削除中…";
+    // Always attempt both: harmless if one side has nothing to delete, and it
+    // avoids leaving a stray copy behind on whichever side wasn't checked.
+    Promise.all([
+      deleteRecording(idx).catch(function(){ /* ignore */ }),
+      deleteCloudRecording(currentScriptId, idx)
+    ]).then(function(){
+      invalidateResolved(idx);
+      updateRecordUI();
+    }, function(){
+      invalidateResolved(idx);
+      updateRecordUI();
+    });
+  });
 
-  function playBlob(blob, onend){
+  recordStatusEl.addEventListener("click", function(){
+    if (!recordStatusEl.classList.contains("has-audio")) return;
+    var epoch = newPlaybackEpoch();
+    resolveRecording(state.idx).then(function(found){
+      if (found && found.blob) playBlob(found.blob, null, epoch);
+    });
+  });
+
+  window.addEventListener("online", function(){ flushPendingUploads(); });
+
+  // The one moment closing the tab can still cost someone their take.
+  window.addEventListener("beforeunload", function(e){
+    if (inFlightSaves > 0){ e.preventDefault(); e.returnValue = ""; return ""; }
+  });
+
+  /* ---------------- playback (one channel, newest take, else TTS) ----------------
+     Two takes playing over each other was never two recordings on one line: it
+     was two playback chains alive at once. A cue's Firestore lookup can take
+     seconds on mobile data, and the line had often already moved on by the time
+     it resolved — so the stale chain started playing on top of the new one, and
+     playBlob() replaced the "currently playing" reference without stopping what
+     it replaced. Every playback now belongs to an epoch; advancing a line,
+     cancelling, or starting a preview bumps it, which both silences the audio in
+     flight and makes any chain from an older epoch abandon itself. */
+  var playbackEpoch = 0;
+  var currentPlaybackAudio = null;
+  var currentPlaybackUrl = null;
+
+  function stopCurrentAudio(){
+    if (currentPlaybackAudio){
+      var audio = currentPlaybackAudio;
+      currentPlaybackAudio = null;
+      audio.onended = null; audio.onerror = null;
+      try { audio.pause(); } catch (e){ /* ignore */ }
+    }
+    if (currentPlaybackUrl){
+      URL.revokeObjectURL(currentPlaybackUrl);
+      currentPlaybackUrl = null;
+    }
+  }
+
+  function newPlaybackEpoch(){
+    stopCurrentAudio();
+    return ++playbackEpoch;
+  }
+
+  function playBlob(blob, onend, epoch){
+    var mine = (epoch === undefined || epoch === null) ? playbackEpoch : epoch;
+    if (mine !== playbackEpoch) return;   // a newer line or a cancel already took over
+    stopCurrentAudio();
+
     var url = URL.createObjectURL(blob);
     var audio = new Audio(url);
     currentPlaybackAudio = audio;
-    audio.onended = function(){ URL.revokeObjectURL(url); if (currentPlaybackAudio === audio) currentPlaybackAudio = null; onend && onend(); };
-    audio.onerror = function(){ URL.revokeObjectURL(url); if (currentPlaybackAudio === audio) currentPlaybackAudio = null; onend && onend(); };
-    audio.play().catch(function(){ URL.revokeObjectURL(url); if (currentPlaybackAudio === audio) currentPlaybackAudio = null; onend && onend(); });
+    currentPlaybackUrl = url;
+
+    var settled = false;
+    function finish(){
+      if (settled) return;
+      settled = true;
+      if (currentPlaybackAudio === audio) stopCurrentAudio();
+      else { try { URL.revokeObjectURL(url); } catch (e){ /* ignore */ } }
+      if (mine === playbackEpoch && onend) onend();
+    }
+    audio.onended = finish;
+    audio.onerror = finish;
+    audio.play().catch(finish);
   }
 
-  async function speakOrPlayback(cueIndex, cue, onend){
-    var blob = null;
-    try { blob = await fetchSharedRecording(cueIndex); } catch (e){ /* ignore */ }
-    if (!blob){
-      try {
-        var rec = await loadRecording(cueIndex);
-        if (rec) blob = rec.blob;
-      } catch (e){ /* ignore */ }
-    }
-    if (blob) playBlob(blob, onend);
-    else speak(cue.text, cue.character, onend);
+  function speakOrPlayback(cueIndex, cue, onend){
+    var epoch = playbackEpoch;
+    resolveRecording(cueIndex).then(function(found){
+      if (epoch !== playbackEpoch) return;   // abandoned: a newer epoch owns the flow
+      if (found && found.blob){ playBlob(found.blob, onend, epoch); return; }
+      speak(cue.text, cue.character, function(){
+        if (epoch === playbackEpoch && onend) onend();
+      });
+    });
   }
 
   function cancelSpeech(){
+    newPlaybackEpoch();
     if (synthAvailable){ try { speechSynthesis.cancel(); } catch (e){ /* ignore */ } }
-    if (currentPlaybackAudio){ currentPlaybackAudio.pause(); currentPlaybackAudio = null; }
     abortActiveRecording();
   }
+
+  /* ---------------- keep the screen awake while rehearsing ----------------
+     A phone propped up on a music stand locking itself mid-line is the other
+     way a take got lost: the recording keeps running but nobody can reach the
+     stop button without unlocking first. */
+  var wakeLock = null;
+
+  function requestWakeLock(){
+    try {
+      if (!navigator.wakeLock || wakeLock) return;
+      navigator.wakeLock.request("screen").then(function(lock){
+        wakeLock = lock;
+        lock.addEventListener("release", function(){ wakeLock = null; });
+      }).catch(function(){ /* unsupported or refused: nothing to do */ });
+    } catch (e){ /* ignore */ }
+  }
+
+  function releaseWakeLock(){
+    if (!wakeLock) return;
+    try { wakeLock.release(); } catch (e){ /* ignore */ }
+    wakeLock = null;
+  }
+
+  // A wake lock is dropped whenever the page is hidden and must be re-taken by
+  // hand when it comes back.
+  document.addEventListener("visibilitychange", function(){
+    if (document.visibilityState !== "visible") return;
+    if (stageEl && stageEl.style.display !== "none") requestWakeLock();
+  });
+
+  flushPendingUploads();
 
   /* ---------------- setup UI ---------------- */
   var soloGrid = document.getElementById("solo-role-grid");
@@ -1775,6 +2419,29 @@
     jumpToScene(parseInt(sceneJump.value, 10));
   });
 
+  /* ---------------- layout mode (phone / PC) ---------------- */
+  var uiToggleBtn = document.getElementById("toggle-ui");
+
+  function uiMode(){
+    return document.documentElement.getAttribute("data-ui") === "mobile" ? "mobile" : "desktop";
+  }
+
+  function renderUiToggle(){
+    var mobile = uiMode() === "mobile";
+    uiToggleBtn.textContent = mobile ? "\u{1F5A5}" : "\u{1F4F1}";
+    uiToggleBtn.title = mobile ? "PC\u8868\u793a\u306b\u5207\u308a\u66ff\u3048" : "\u30b9\u30de\u30db\u8868\u793a\u306b\u5207\u308a\u66ff\u3048";
+    uiToggleBtn.setAttribute("aria-label", uiToggleBtn.title);
+  }
+
+  uiToggleBtn.addEventListener("click", function(){
+    var next = uiMode() === "mobile" ? "desktop" : "mobile";
+    document.documentElement.setAttribute("data-ui", next);
+    try { localStorage.setItem("happyShapeUiMode", next); } catch (e){ /* private mode */ }
+    renderUiToggle();
+    if (stageEl.style.display !== "none"){ renderPreviewBlock(); scrollToCurrent(); }
+  });
+  renderUiToggle();
+
   /* ---------------- voice settings drawer ---------------- */
   var drawer = document.getElementById("drawer");
   var overlay = document.getElementById("overlay");
@@ -1841,6 +2508,7 @@
     var rehearsing = name === "rehearsal";
     stageEl.style.display = rehearsing ? "block" : "none";
     footerEl.style.display = rehearsing ? "flex" : "none";
+    if (rehearsing) requestWakeLock(); else releaseWakeLock();
   }
 
   /* ---------------- script library ---------------- */
@@ -2414,6 +3082,7 @@
   }
 
   var PREVIEW_COUNT = 5;
+  function previewCount(){ return uiMode() === "mobile" ? 3 : PREVIEW_COUNT; }
   var previewBlockEl = null;
 
   function clearPreview(){
@@ -2426,7 +3095,8 @@
     var items = [];
     var lineCount = 0;
     var i = state.idx + 1;
-    while (i < CUES.length && lineCount < PREVIEW_COUNT){
+    var wanted = previewCount();
+    while (i < CUES.length && lineCount < wanted){
       items.push(CUES[i]);
       if (CUES[i].type === "L") lineCount++;
       i++;
@@ -2489,6 +3159,7 @@
   var rowsByIndex = {};
 
   function revealNext(){
+    newPlaybackEpoch();
     markRowDone(currentRow);
     state.idx++;
     var cue = CUES[state.idx];
@@ -2652,3 +3323,6 @@
   }
 })();
 </script>
+
+</body>
+</html>
