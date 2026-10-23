@@ -321,6 +321,28 @@
   .follow-btn{ padding:.25rem .7rem; font-size:.78rem; border-color:var(--accent); color:var(--accent); font-weight:700; }
   .follow-btn[hidden]{ display:none; }
 
+  /* ---------- batch recording ---------- */
+  .rs-card{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:1rem 1.1rem; margin-bottom:.6rem; }
+  .rs-card.recording{ border:2px solid var(--danger); padding:calc(1rem - 1px) calc(1.1rem - 1px); }
+  .rs-prev{ font-family:var(--serif); font-size:.9rem; color:var(--ink-dim); margin:.3rem 0 .5rem; }
+  .rs-prev .who, .rs-line .who{ font-weight:700; margin-right:.4rem; }
+  .rs-line{ font-family:var(--serif); font-size:1.3rem; line-height:1.7; margin-bottom:.4rem; }
+  .rs-status{ min-height:1.4rem; font-size:.85rem; color:var(--ink-dim); margin:.2rem 0 .5rem; font-variant-numeric:tabular-nums; }
+  .rs-status.recording{ color:var(--danger); font-weight:700; }
+  .rs-status.failed{ color:var(--danger); }
+  .rs-main{ width:100%; min-height:3.6rem; font-size:1.1rem; font-weight:700; }
+  .rs-main.recording{ background:var(--danger); border-color:var(--danger); }
+  .rs-sub{ display:grid; grid-template-columns:repeat(5,1fr); gap:.4rem; margin:.6rem 0 .2rem; }
+  .rs-sub .btn{ padding:.55rem .3rem; font-size:.78rem; }
+  @media (max-width:560px){ .rs-sub{ grid-template-columns:repeat(3,1fr); } }
+  .rs-list{ margin-top:.8rem; border-top:1px solid var(--border); }
+  .rs-item{ display:grid; grid-template-columns:2.6rem 1fr 1.6rem; gap:.5rem; align-items:center; padding:.45rem .3rem;
+    border-bottom:1px solid var(--border); cursor:pointer; font-size:.85rem; }
+  .rs-item.current{ background:var(--accent-soft); }
+  .rs-item .n{ font-family:var(--mono); color:var(--ink-dim); text-align:right; }
+  .rs-item .t{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rs-item .s{ text-align:center; }
+
   /* ---------- sound-cue practice sheet ---------- */
   .cs-bar{ display:flex; flex-wrap:wrap; gap:.5rem .7rem; align-items:center; margin-bottom:.8rem; }
   .cs-next{ flex:1 1 12rem; font-size:.85rem; color:var(--ink-dim); }
@@ -591,6 +613,10 @@
           <b>効果音の練習</b>
           <span>音響担当向け。台本の効果音だけを順番に並べ、きっかけのセリフを見ながら鳴らす練習ができます。</span>
         </button>
+        <button type="button" class="mode-card" data-mode="rec" aria-pressed="false">
+          <b>まとめて録音</b>
+          <span>自分の役のセリフだけを順番に録音。「保存して次へ」を押すと、次のセリフの録音がそのまま始まります。</span>
+        </button>
       </div>
     </fieldset>
 
@@ -628,6 +654,30 @@
     <p class="hint" style="margin:0 0 .8rem;">ボタンで再生（再生中にもう一度押すと停止）。<b>Space / Enter</b> で次の効果音を再生、再生中は <b>Space / Enter / Esc</b> で停止。再生開始から0.5秒間は連打防止のため停止しません。キーで停止した後は3秒間キー操作を受け付けません。鳴らし済みの効果音をもう一度押すと確認が出ます。</p>
     <div id="cs-list"></div>
     <p class="hint" style="margin-top:1rem;">使用した音素材：OtoLogic（https://otologic.jp、CC BY 4.0）、効果音ラボ／効果音：ポケットサウンド – https://pocket-se.info/。音量調整などの加工をしています。<a href="sfx/CREDITS.txt" target="_blank" rel="noopener">クレジット</a></p>
+  </section>
+
+  <section id="recsheet" style="display:none;">
+    <div class="cs-bar">
+      <div class="cs-next"><b id="rs-role">-</b> のセリフを録音　<span id="rs-progress"></span></div>
+      <button class="btn ghost" id="rs-exit-btn" title="録音をやめてモード選択に戻る">◀ 戻る</button>
+    </div>
+    <div class="rs-card" id="rs-card">
+      <div class="cue-scene" id="rs-scene"></div>
+      <div class="rs-prev" id="rs-prev"></div>
+      <div class="rs-line" id="rs-line"></div>
+      <div class="cue-note" id="rs-next"></div>
+    </div>
+    <div class="rs-status" id="rs-status"></div>
+    <button class="btn primary rs-main" id="rs-main-btn">● 録音開始</button>
+    <div class="rs-sub">
+      <button class="btn ghost" id="rs-prev-btn">◀ 前のセリフ</button>
+      <button class="btn ghost" id="rs-redo-btn">↺ 録り直す</button>
+      <button class="btn ghost" id="rs-stop-btn">⏸ 止める</button>
+      <button class="btn ghost" id="rs-play-btn">▶ 試聴</button>
+      <button class="btn ghost" id="rs-next-btn">次のセリフ ▶</button>
+    </div>
+    <p class="hint">「■ 保存して次へ」で今のセリフを保存し、次のセリフの録音がすぐ始まります。<b>Space / Enter</b> でも押せます。録音はこれまでと同じく全員に共有されます。下の一覧から好きなセリフに移動できます。</p>
+    <div class="rs-list" id="rs-list"></div>
   </section>
 </main>
 
@@ -2400,7 +2450,7 @@
   function updateStartEnabled(){
     // Missing-cast mode may start with nobody absent: a full-cast run still
     // wants the sound effects cued.
-    var ok = state.mode === "solo" ? !!state.myRole : true;
+    var ok = (state.mode === "solo" || state.mode === "rec") ? !!state.myRole : true;
     document.getElementById("start-btn").disabled = !ok;
   }
 
@@ -2410,7 +2460,7 @@
       Array.prototype.forEach.call(modeGrid.children, function(c){ c.setAttribute("aria-pressed","false"); });
       card.setAttribute("aria-pressed","true");
       state.mode = card.dataset.mode;
-      document.getElementById("solo-fields").style.display = state.mode === "solo" ? "" : "none";
+      document.getElementById("solo-fields").style.display = (state.mode === "solo" || state.mode === "rec") ? "" : "none";
       document.getElementById("missing-fields").style.display = state.mode === "missing" ? "" : "none";
       document.getElementById("sfx-fields").style.display = state.mode === "sfx" ? "" : "none";
       updateStartEnabled();
@@ -2514,6 +2564,7 @@
   var stageEl = document.getElementById("stage");
   var footerEl = document.getElementById("footer");
   var cuesheetEl = document.getElementById("cuesheet");
+  var recsheetEl = document.getElementById("recsheet");
   var titlePlayEl = document.getElementById("title-play");
 
   function showScreen(name){
@@ -2525,7 +2576,9 @@
     footerEl.style.display = rehearsing ? "flex" : "none";
     cuesheetEl.style.display = name === "cuesheet" ? "block" : "none";
     if (name !== "cuesheet") stopCueSound();
-    if (rehearsing || name === "cuesheet") requestWakeLock(); else releaseWakeLock();
+    if (name !== "recsheet" && recsheetEl.style.display !== "none") leaveRecSheet();
+    recsheetEl.style.display = name === "recsheet" ? "block" : "none";
+    if (rehearsing || name === "cuesheet" || name === "recsheet") requestWakeLock(); else releaseWakeLock();
   }
 
   /* ---------------- script library ---------------- */
@@ -3011,6 +3064,11 @@
       showScreen("cuesheet");
       return;
     }
+    if (state.mode === "rec"){
+      buildRecSheet();
+      showScreen("recsheet");
+      return;
+    }
     unlockAudio();
     showScreen("rehearsal");
     resetLog();
@@ -3175,6 +3233,234 @@
     if (cuesheetEl.style.display !== "none" && !csConfirm.open && e.key === " ") e.preventDefault();
   });
 
+  /* ---------------- batch recording ----------------
+     One role's lines, one after another, one tap per line: "保存して次へ" saves the
+     take and starts recording the next line straight away. The microphone stays
+     open for the whole session so there's no warm-up between lines. Takes go
+     through persistTake(), so they are stored and shared exactly like any other. */
+  var rsLines = [];             // cue indices of the chosen role's lines
+  var rsPos = 0;
+  var rsStream = null, rsRecorder = null, rsChunks = [], rsCueIndex = null;
+  var rsAfterStop = null;       // "next" | "stay" | "redo"
+  var rsTimerId = 0, rsStartedAt = 0, rsAutoStopId = 0;
+  var rsDone = {};              // cueIndex -> true: recorded in this session
+  var rsMainBtn = document.getElementById("rs-main-btn");
+  var rsStatusEl = document.getElementById("rs-status");
+
+  function rsRecording(){ return !!rsRecorder && rsRecorder.state === "recording"; }
+
+  function rsNeighbourLine(from, step){
+    var scene = CUES[from].sceneIndex;
+    for (var i = from + step; i >= 0 && i < CUES.length && CUES[i].sceneIndex === scene; i += step){
+      if (CUES[i].type === "L") return CUES[i];
+    }
+    return null;
+  }
+
+  function buildRecSheet(){
+    rsLines = [];
+    // a line that is only a pause ("……") or stage business ("（無視）") has nothing to record
+    CUES.forEach(function(c, i){
+      if (c.type === "L" && c.character === state.myRole && /[^…・。、！？!?s「」『』ー～〜]/.test(stripParentheticals(c.text))) rsLines.push(i);
+    });
+    rsPos = 0; rsDone = {};
+    document.getElementById("rs-role").textContent = state.myRole;
+    renderRecList();
+    showRecLine();
+    if (!recordingSupported){
+      rsStatusEl.className = "rs-status failed";
+      rsStatusEl.textContent = "⚠ このブラウザでは録音できません";
+    }
+  }
+
+  function rsSaveLabel(idx){
+    var s = saveStateByCue[idx];
+    if (s && s.state === "saving") return "…";
+    if (s && s.state === "failed") return "⚠";
+    if ((s && s.state === "saved") || rsDone[idx]) return "✓";
+    return "";
+  }
+
+  function renderRecList(){
+    var list = document.getElementById("rs-list");
+    list.innerHTML = "";
+    rsLines.forEach(function(idx, k){
+      var item = document.createElement("div");
+      item.className = "rs-item" + (k === rsPos ? " current" : "");
+      item.innerHTML = '<span class="n">' + (k + 1) + '</span><span class="t">' + escapeHtml(CUES[idx].text) +
+        '</span><span class="s">' + rsSaveLabel(idx) + '</span>';
+      item.addEventListener("click", function(){
+        if (rsRecording()) return;
+        rsPos = k;
+        showRecLine();
+      });
+      list.appendChild(item);
+    });
+  }
+
+  function showRecLine(){
+    var total = rsLines.length;
+    document.getElementById("rs-progress").textContent = total ? (rsPos + 1) + " / " + total : "";
+    if (!total){
+      document.getElementById("rs-line").textContent = "この役のセリフはありません。";
+      rsMainBtn.disabled = true;
+      return;
+    }
+    var idx = rsLines[rsPos], cue = CUES[idx];
+    var prev = rsNeighbourLine(idx, -1), next = rsNeighbourLine(idx, 1);
+    document.getElementById("rs-scene").textContent = SCENES[cue.sceneIndex].title;
+    document.getElementById("rs-prev").innerHTML = prev
+      ? '<span class="who">' + escapeHtml(prev.character) + '</span>「' + escapeHtml(prev.text) + '」'
+      : "（シーン冒頭）";
+    document.getElementById("rs-line").innerHTML = '<span class="who">' + escapeHtml(cue.character) + '</span>' + escapeHtml(cue.text);
+    document.getElementById("rs-next").textContent = next ? "次：" + next.character + "「" + next.text + "」" : "";
+    var rec = rsRecording();
+    document.getElementById("rs-card").classList.toggle("recording", rec);
+    rsMainBtn.classList.toggle("recording", rec);
+    rsMainBtn.textContent = rec ? (rsPos + 1 < total ? "■ 保存して次へ" : "■ 保存して終わる") : "● 録音開始";
+    rsMainBtn.disabled = !recordingSupported;
+    document.getElementById("rs-prev-btn").disabled = rec || rsPos === 0;
+    document.getElementById("rs-next-btn").disabled = rec || rsPos >= total - 1;
+    document.getElementById("rs-stop-btn").disabled = !rec;
+    document.getElementById("rs-play-btn").disabled = rec;
+    document.getElementById("rs-redo-btn").disabled = !recordingSupported;
+    if (!rec) showRecSaveStatus();
+    Array.prototype.forEach.call(document.getElementById("rs-list").children, function(el, k){
+      el.classList.toggle("current", k === rsPos);
+    });
+  }
+
+  function showRecSaveStatus(){
+    var idx = rsLines[rsPos], s = saveStateByCue[idx];
+    rsStatusEl.className = "rs-status" + (s && s.state === "failed" ? " failed" : "");
+    rsStatusEl.textContent = !s ? (rsDone[idx] ? "✓ 録音済み" : "")
+      : s.state === "saving" ? "保存中…" : s.state === "saved" ? "✓ 保存して共有しました"
+      : "⚠ 共有に失敗しました（この端末には保存済み）";
+  }
+
+  function rsTick(){
+    var sec = Math.floor((Date.now() - rsStartedAt) / 1000);
+    rsStatusEl.className = "rs-status recording";
+    rsStatusEl.textContent = "● 録音中 " + Math.floor(sec / 60) + ":" + ("0" + (sec % 60)).slice(-2);
+  }
+
+  function rsEnsureMic(){
+    if (rsStream && rsStream.active) return Promise.resolve(rsStream);
+    return navigator.mediaDevices.getUserMedia({ audio:true }).then(function(s){ rsStream = s; return s; });
+  }
+
+  function rsReleaseMic(){
+    if (rsStream){ rsStream.getTracks().forEach(function(t){ t.stop(); }); rsStream = null; }
+  }
+
+  function recStart(){
+    if (!recordingSupported || rsRecording() || !rsLines.length) return;
+    newPlaybackEpoch();   // never record over a take that's being played back
+    rsCueIndex = rsLines[rsPos];
+    rsStatusEl.className = "rs-status";
+    rsStatusEl.textContent = "マイクの準備中…";
+    rsEnsureMic().then(function(stream){
+      rsChunks = [];
+      try { rsRecorder = new MediaRecorder(stream, { audioBitsPerSecond: 32000 }); }
+      catch (e){ rsRecorder = new MediaRecorder(stream); }
+      rsRecorder.ondataavailable = function(e){ if (e.data && e.data.size) rsChunks.push(e.data); };
+      rsRecorder.onstop = rsOnStop;
+      rsRecorder.start();
+      rsStartedAt = Date.now();
+      rsTick();
+      rsTimerId = setInterval(rsTick, 250);
+      rsAutoStopId = setTimeout(function(){ recStop("stay"); }, RECORD_HARD_LIMIT_MS);
+      showRecLine();
+    }).catch(function(){
+      rsStatusEl.className = "rs-status failed";
+      rsStatusEl.textContent = "⚠ マイクを使えませんでした。ブラウザのマイク許可を確認してください";
+    });
+  }
+
+  function recStop(after){
+    if (!rsRecording()) return;
+    rsAfterStop = after;
+    rsRecorder.stop();
+  }
+
+  function rsOnStop(){
+    clearInterval(rsTimerId); clearTimeout(rsAutoStopId);
+    var recorder = rsRecorder, idx = rsCueIndex, after = rsAfterStop || "stay";
+    rsRecorder = null; rsAfterStop = null; rsCueIndex = null;
+    var blob = new Blob(rsChunks, { type: (recorder && recorder.mimeType) || "audio/webm" });
+    if (after !== "redo" && blob.size > 0 && CUES[idx]){
+      rsDone[idx] = true;
+      persistTake(idx, CUES[idx].character, blob, Date.now()).then(function(){
+        renderRecList();
+        if (!rsRecording() && rsLines[rsPos] === idx) showRecSaveStatus();
+      });
+      renderRecList();
+    }
+    if (after === "next" && rsPos < rsLines.length - 1){
+      rsPos++;
+      showRecLine();
+      // a short gap so the tap that ended the last take isn't the first sound of this one
+      setTimeout(function(){ if (recsheetEl.style.display !== "none") recStart(); }, 350);
+      return;
+    }
+    if (after === "redo"){ showRecLine(); recStart(); return; }
+    showRecLine();
+    if (after === "next"){   // that was the last line
+      rsReleaseMic();
+      rsStatusEl.className = "rs-status";
+      rsStatusEl.textContent = "✓ 最後のセリフまで録音しました";
+    }
+  }
+
+  // Leaving the screen keeps whatever was being said: it's saved, not thrown away.
+  function leaveRecSheet(){
+    if (rsRecording()){
+      rsRecorder.onstop = function(){ rsAfterStop = "stay"; rsOnStop(); rsReleaseMic(); };
+      rsRecorder.stop();
+    } else {
+      rsReleaseMic();
+    }
+  }
+
+  rsMainBtn.addEventListener("click", function(){
+    unlockAudio();
+    if (rsRecording()) recStop("next"); else recStart();
+  });
+  document.getElementById("rs-redo-btn").addEventListener("click", function(){
+    if (rsRecording()) recStop("redo"); else recStart();
+  });
+  document.getElementById("rs-stop-btn").addEventListener("click", function(){ recStop("stay"); });
+  document.getElementById("rs-prev-btn").addEventListener("click", function(){
+    if (rsRecording() || rsPos === 0) return;
+    rsPos--; showRecLine();
+  });
+  document.getElementById("rs-next-btn").addEventListener("click", function(){
+    if (rsRecording() || rsPos >= rsLines.length - 1) return;
+    rsPos++; showRecLine();
+  });
+  document.getElementById("rs-play-btn").addEventListener("click", function(){
+    unlockAudio();
+    var idx = rsLines[rsPos], epoch = newPlaybackEpoch();
+    resolveRecording(idx).then(function(found){
+      if (found && found.blob) playLineAudio(found, CUES[idx].character, null, epoch);
+      else { rsStatusEl.className = "rs-status"; rsStatusEl.textContent = "まだ録音がありません"; }
+    });
+  });
+  document.getElementById("rs-exit-btn").addEventListener("click", function(){ showScreen("setup"); });
+
+  document.addEventListener("keydown", function(e){
+    if (recsheetEl.style.display === "none") return;
+    if (e.key !== " " && e.key !== "Enter") return;
+    if (["INPUT","SELECT","TEXTAREA"].indexOf(document.activeElement.tagName) !== -1) return;
+    e.preventDefault();
+    if (e.repeat || rsMainBtn.disabled) return;
+    rsMainBtn.click();
+  });
+  // keep Space's keyup from also "clicking" whichever button has focus
+  document.addEventListener("keyup", function(e){
+    if (recsheetEl.style.display !== "none" && e.key === " ") e.preventDefault();
+  });
+
   restartBtn.addEventListener("click", function(){
     cancelSpeech();
     resetLog();
@@ -3193,6 +3479,11 @@
 
   function jumpToScene(sceneIdx){
     if (cuesheetEl.style.display !== "none"){ scrollCueSheetToScene(sceneIdx); return; }
+    if (recsheetEl.style.display !== "none"){
+      if (rsRecording()) return;
+      for (var k = 0; k < rsLines.length; k++){ if (CUES[rsLines[k]].sceneIndex >= sceneIdx){ rsPos = k; showRecLine(); break; } }
+      return;
+    }
     // find first cue index of scene
     var target = 0;
     for (var i=0;i<CUES.length;i++){ if (CUES[i].sceneIndex === sceneIdx){ target = i; break; } }
