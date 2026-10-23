@@ -13,7 +13,7 @@
 |---|---|---|
 | チャイム `sfx/chime.wav` | Japanese_School_Bell02-03(Slow-Short) | [OtoLogic](https://otologic.jp)（CC BY 4.0） |
 | 電話着信音 `sfx/ringtone.wav` | Smartphone-Ringtone01-01(Dry) | [OtoLogic](https://otologic.jp)（CC BY 4.0） |
-| LINE音 `sfx/line.wav` | Notification | Gravity Sound（CC BY 4.0） |
+| LINE音 `sfx/line.wav` | Smartphone-UI_Sound03-02(Dry) | [OtoLogic](https://otologic.jp)（CC BY 4.0） |
 | スマホの通知音 `sfx/notification.wav` | Notification 2 | Gravity Sound（CC BY 4.0） |
 | 扉が開く音（ページ内に埋め込み） | ドアを開ける1 | [効果音ラボ](https://soundeffect-lab.info) |
 | 扉が閉まる音（ページ内に埋め込み） | ドアを閉める2 | [効果音ラボ](https://soundeffect-lab.info) |
