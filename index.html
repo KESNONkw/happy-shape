@@ -554,9 +554,9 @@
     </fieldset>
 
     <fieldset id="missing-fields" style="display:none;">
-      <legend>今日いない役を選ぶ（複数可）</legend>
+      <legend>今日いない役を選ぶ（複数可・全員いれば選ばなくてOK）</legend>
       <div class="role-grid" id="missing-role-grid"></div>
-      <p class="hint">選んだ役のセリフだけ自動で読み上げます。それ以外は表示のみ。1行ごとに「次へ」を押して進めます。</p>
+      <p class="hint">選んだ役のセリフだけ自動で読み上げます。それ以外は表示のみ。1行ごとに「次へ」を押して進めます。誰も選ばずに始めると、効果音だけを鳴らして進められます。</p>
     </fieldset>
 
     <p class="warn-banner" id="tts-warning" style="display:none;">お使いのブラウザは音声読み上げ（Web Speech API）に対応していません。文字表示のみで進行します。</p>
@@ -2331,7 +2331,9 @@
   }
 
   function updateStartEnabled(){
-    var ok = state.mode === "solo" ? !!state.myRole : Object.keys(state.absent).length > 0;
+    // Missing-cast mode may start with nobody absent: a full-cast run still
+    // wants the sound effects cued.
+    var ok = state.mode === "solo" ? !!state.myRole : true;
     document.getElementById("start-btn").disabled = !ok;
   }
 
