@@ -2135,7 +2135,7 @@
 
     if (recording){
       recordStatusEl.className = "record-status";
-      recordStatusEl.textContent = state.mode === "rec" ? "● 録音中…（読み終えたら「保存して次へ」）" : "録音中…（読み終えたら「停止して保存」）";
+      recordStatusEl.textContent = state.mode === "rec" ? "録音中…（読み終えたら「保存して次へ」）" : "録音中…（読み終えたら「停止して保存」）";
       recRetryBtn.style.display = "none";
       recDeleteBtn.disabled = true;
       return;
