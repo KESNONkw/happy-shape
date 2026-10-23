@@ -606,7 +606,6 @@
       <p class="hint">選んだ役のセリフは自動で読み上げ、そのまま次へ進みます。ト書きは飛ばし、効果音は鳴らしてから進みます。止まるのは現場の人が読むセリフだけで、読み終えたら「次へ」を押してください。誰も選ばずに始めると、効果音だけを鳴らして進められます。</p>
     </fieldset>
 
-    <p class="warn-banner" id="tts-warning" style="display:none;">お使いのブラウザは音声読み上げ（Web Speech API）に対応していません。文字表示のみで進行します。</p>
 
     <button class="start-btn" id="start-btn" disabled>稽古をはじめる</button>
   </section>
@@ -668,27 +667,12 @@
   <h3>設定</h3>
 
   <div class="drawer-section">
-    <h4>読み上げの速さ</h4>
-    <input type="range" id="rate-slider" min="0.6" max="1.6" step="0.05" value="1">
-    <div class="rate-value" id="rate-value">1.00×</div>
-  </div>
-
-  <div class="drawer-section">
-    <div class="toggle-row">
-      <span>ト書き・効果音も読み上げる</span>
-      <input type="checkbox" id="voice-directions-toggle">
-    </div>
     <div class="toggle-row">
       <span>効果音を鳴らす</span>
       <input type="checkbox" id="sfx-toggle" checked>
     </div>
     <p class="hint">セリフ音声：VOICEVOX:春日部つむぎ、VOICEVOX:冥鳴ひまり、VOICEVOX:白上虎太郎、VOICEVOX:青山龍星、VOICEVOX:九州そら。</p>
     <p class="hint">使用した音素材：OtoLogic（https://otologic.jp、CC BY 4.0）、効果音ラボ／効果音：ポケットサウンド – https://pocket-se.info/。<a href="sfx/CREDITS.txt" target="_blank" rel="noopener">クレジット</a></p>
-  </div>
-
-  <div class="drawer-section">
-    <h4>役ごとの声</h4>
-    <div id="voice-assign-list"></div>
   </div>
 </aside>
 
@@ -1285,7 +1269,6 @@
 
     renderRoleGrids();
     renderSceneJump();
-    renderVoiceAssignList();
     updateStartEnabled();
   }
 
@@ -1299,125 +1282,45 @@
     speaking: false
   };
 
-  /* ---------------- speech synthesis ---------------- */
-  // Some embedded/sandboxed viewers (e.g. a permissions-policy-restricted iframe)
-  // throw synchronously just from touching window.speechSynthesis, rather than
-  // simply omitting it. An uncaught throw here would abort this entire IIFE
-  // before any button listener below gets attached, so every access is guarded.
-  var synthAvailable = false;
-  try { synthAvailable = ("speechSynthesis" in window) && !!window.speechSynthesis; }
-  catch (e){ synthAvailable = false; }
+  /* ---------------- line playback (audio files only) ----------------
+     Every voiced line plays from an audio file: a take someone recorded, or the
+     generated voice shipped under recordings/. The browser's own speech synthesis
+     is not used; on phones it competed with these files for the audio output. */
 
-  var voiceList = [];
-  var charVoiceURI = {};   // charName -> voiceURI override ("" = auto)
-  var globalRate = 1.0;
-  var voiceDirectionsOn = false;
+  // iOS only lets a page start audio from a tap. Lines play one after another from
+  // callbacks, not taps, so a single shared <audio> element is "unlocked" by playing
+  // a blip of silence inside a tap; once unlocked, iOS lets that same element play
+  // later without one. A fresh new Audio() per line would be blocked every time.
+  var SILENT_WAV = "data:audio/wav;base64,UklGRiwAAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YQgAAAAAAAAAAAAAAA==";
+  var lineAudio = new Audio();
+  lineAudio.preload = "auto";
+  var lineAudioUnlocked = false;
 
-  function loadVoices(){
+  function unlockAudio(){
+    if (lineAudioUnlocked || currentPlaybackAudio) return;
     try {
-      voiceList = synthAvailable ? speechSynthesis.getVoices() : [];
-    } catch (e){
-      synthAvailable = false;
-      voiceList = [];
-    }
-    renderVoiceAssignList();
-  }
-  if (synthAvailable){
-    try {
-      loadVoices();
-      speechSynthesis.onvoiceschanged = loadVoices;
-    } catch (e){
-      synthAvailable = false;
-      document.getElementById("tts-warning").style.display = "block";
-    }
-  } else {
-    document.getElementById("tts-warning").style.display = "block";
-  }
-
-  function autoAssignVoice(charName, indexInList){
-    var ja = voiceList.filter(function(v){ return /^ja/i.test(v.lang); });
-    var pool = ja.length ? ja : voiceList;
-    if (!pool.length) return null;
-    return pool[indexInList % pool.length];
+      lineAudio.src = SILENT_WAV;
+      var p = lineAudio.play();
+      if (p && p.then) p.then(function(){ lineAudioUnlocked = true; }, function(){ /* try again on the next tap */ });
+      else lineAudioUnlocked = true;
+    } catch (e){ /* try again on the next tap */ }
   }
 
   function stripParentheticals(text){
-    return text.replace(/[（(][^）)]*[）)]/g, "").replace(/\s+/g," ").trim();
+    return text.replace(/[（(][^）)]*[）)]/g, "").replace(/s+/g," ").trim();
   }
 
-  // iOS WebKit (Safari and every iPhone browser, since Apple forces them onto WebKit)
-  // will silently produce no sound for speechSynthesis.speak() unless a speak() call
-  // has happened synchronously inside a real user gesture recently. Our automatic
-  // advance chain calls speak() from async callbacks (after checking for recordings),
-  // which loses that gesture link. Firing a trivial utterance directly inside every
-  // tap keeps the engine "engaged" so the real, async-triggered calls keep working.
-  function primeSpeechSynthesis(){
-    if (!synthAvailable) return;
-    try {
-      var warm = new SpeechSynthesisUtterance(" ");
-      warm.volume = 0.01;
-      warm.rate = 10;
-      speechSynthesis.speak(warm);
-    } catch (e){ /* ignore */ }
-  }
-
-  function speak(text, charName, onend){
-    if (!synthAvailable || !text){ onend && onend(); return; }
-    var spoken = stripParentheticals(text);
-    if (!spoken){ setTimeout(function(){ onend && onend(); }, 300); return; }
-
-    // A restricted embedding context can throw partway through wiring an
-    // utterance up (construction, property access, or the speak() call
-    // itself) rather than simply refusing to produce sound. Any such throw
-    // here must not freeze the UI on "reading aloud…" forever, so the whole
-    // attempt is guarded and treated as "give up and move on".
-    try {
-      var u = new SpeechSynthesisUtterance(spoken);
-      u.lang = "ja-JP";
-      var meta = CHAR_META[charName];
-      var rate = (meta ? meta.rate : 1) * globalRate;
-      u.pitch = meta ? meta.pitch : 1;
-      u.rate = rate;
-      var uri = charName ? charVoiceURI[charName] : "";
-      if (uri){
-        var v = voiceList.find(function(v){ return v.voiceURI === uri; });
-        if (v) u.voice = v;
-      }
-
-      var settled = false;
-      function finish(){
-        if (settled) return;
-        settled = true;
-        clearTimeout(watchdog);
-        onend && onend();
-      }
-      u.onend = finish;
-      u.onerror = finish;
-
-      // Some mobile browsers (notably iOS WebKit, which underlies Chrome/Edge/etc. on
-      // iPhone too) can silently drop an utterance: it never fires start/end/error and
-      // playback gets stuck forever showing "speaking". Size a watchdog to the text
-      // length so we always move on even when the browser stays silent.
-      var watchdogMs = Math.max(2000, spoken.length * 250 / rate) + 3000;
-      var watchdog = setTimeout(function(){
-        try { speechSynthesis.cancel(); } catch (e){ /* ignore */ }
-        finish();
-      }, watchdogMs);
-
-      speechSynthesis.cancel(); // clear any stuck queue before speaking (iOS WebKit workaround)
-      setTimeout(function(){
-        try { speechSynthesis.speak(u); }
-        catch (e){ synthAvailable = false; finish(); }
-      }, 30);
-    } catch (e){
-      synthAvailable = false;
-      onend && onend();
-    }
+  // A line with no audio (a "……" beat, or a script with no voices yet) still takes
+  // a moment, sized to what's written, so an automatic run keeps a natural pace.
+  function pauseForLine(text, onend){
+    var spoken = stripParentheticals(text || "");
+    var ms = spoken ? Math.min(4000, 600 + spoken.length * 90) : 700;
+    setTimeout(function(){ onend && onend(); }, ms);
   }
 
   /* ---------------- recorded-audio storage (IndexedDB) ---------------- */
-  // Same rationale as the speechSynthesis guard above: a restricted embedding
-  // context can throw just from touching navigator.mediaDevices, not just omit it.
+  // A restricted embedding context can throw just from touching
+  // navigator.mediaDevices, not just omit it, so the probe is guarded.
   var recordingSupported = false;
   try { recordingSupported = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder); }
   catch (e){ recordingSupported = false; }
@@ -2163,7 +2066,7 @@
   }
 
   function toggleRecording(){
-    primeSpeechSynthesis();
+    unlockAudio();
     if (mediaRecorder && mediaRecorder.state === "recording") stopRecording();
     else startRecording();
   }
@@ -2259,7 +2162,8 @@
     stopCurrentAudio();
 
     var url = URL.createObjectURL(blob);
-    var audio = new Audio(url);
+    var audio = lineAudio;   // the tap-unlocked element; see unlockAudio()
+    audio.src = url;
     currentPlaybackAudio = audio;
     currentPlaybackUrl = url;
 
@@ -2281,7 +2185,7 @@
     resolveRecording(cueIndex).then(function(found){
       if (epoch !== playbackEpoch) return;   // abandoned: a newer epoch owns the flow
       if (found && found.blob){ playBlob(found.blob, onend, epoch); return; }
-      speak(cue.text, cue.character, function(){
+      pauseForLine(cue.text, function(){
         if (epoch === playbackEpoch && onend) onend();
       });
     });
@@ -2344,7 +2248,6 @@
 
   function cancelSpeech(){
     newPlaybackEpoch();
-    if (synthAvailable){ try { speechSynthesis.cancel(); } catch (e){ /* ignore */ } }
     abortActiveRecording();
   }
 
@@ -2482,54 +2385,12 @@
   overlay.addEventListener("click", closeDrawer);
   function closeDrawer(){ drawer.classList.remove("open"); overlay.classList.remove("open"); }
 
-  var rateSlider = document.getElementById("rate-slider");
-  var rateValue = document.getElementById("rate-value");
-  rateSlider.addEventListener("input", function(){
-    globalRate = parseFloat(rateSlider.value);
-    rateValue.textContent = globalRate.toFixed(2) + "×";
-  });
-
-  document.getElementById("voice-directions-toggle").addEventListener("change", function(e){
-    voiceDirectionsOn = e.target.checked;
-  });
-
   var sfxToggle = document.getElementById("sfx-toggle");
   sfxToggle.checked = sfxOn;
   sfxToggle.addEventListener("change", function(e){
     sfxOn = e.target.checked;
     try { localStorage.setItem("happyShapeSfx", sfxOn ? "on" : "off"); } catch (err){ /* private mode */ }
   });
-
-  function renderVoiceAssignList(){
-    var wrap = document.getElementById("voice-assign-list");
-    wrap.innerHTML = "";
-    var ja = voiceList.filter(function(v){ return /^ja/i.test(v.lang); });
-    var pool = ja.length ? ja : voiceList;
-    CHAR_LIST.forEach(function(name, i){
-      if (!(name in charVoiceURI)){
-        var auto = autoAssignVoice(name, i);
-        charVoiceURI[name] = auto ? auto.voiceURI : "";
-      }
-      var row = document.createElement("div");
-      row.className = "voice-row";
-      var label = document.createElement("span");
-      label.className = "who-label"; label.textContent = name;
-      label.style.color = CHAR_META[name].color;
-      var sel = document.createElement("select");
-      var optAuto = document.createElement("option");
-      optAuto.value = ""; optAuto.textContent = "自動";
-      sel.appendChild(optAuto);
-      (pool.length ? pool : voiceList).forEach(function(v){
-        var o = document.createElement("option");
-        o.value = v.voiceURI; o.textContent = v.name + " (" + v.lang + ")";
-        if (v.voiceURI === charVoiceURI[name]) o.selected = true;
-        sel.appendChild(o);
-      });
-      sel.addEventListener("change", function(){ charVoiceURI[name] = sel.value; });
-      row.appendChild(label); row.appendChild(sel);
-      wrap.appendChild(row);
-    });
-  }
 
   /* ---------------- screen switching (library / import / setup / rehearsal) ---------------- */
   var libraryEl = document.getElementById("library");
@@ -3035,7 +2896,7 @@
       showScreen("cuesheet");
       return;
     }
-    primeSpeechSynthesis();
+    unlockAudio();
     showScreen("rehearsal");
     resetLog();
     revealNext();
@@ -3225,7 +3086,7 @@
 
   // Start reading from any cue: everything before it counts as read, everything after as upcoming.
   function jumpTo(target){
-    primeSpeechSynthesis();
+    unlockAudio();
     cancelSpeech();
     removeEndCard();
     if (!rowsByIndex[0]) buildStage();
@@ -3260,7 +3121,7 @@
   }
   function currentCueShouldSpeak(cue){
     if (cue.type === "N") return false;
-    if (cue.type !== "L") return voiceDirectionsOn;
+    if (cue.type !== "L") return false;
     if (state.mode === "solo") return cue.character !== state.myRole;
     return !!state.absent[cue.character];
   }
@@ -3417,7 +3278,7 @@
           setStatus("idle","準備完了");
           revealNext();
         });
-      } else if (speakThis || (cue.type !== "L" && voiceDirectionsOn)){
+      } else if (speakThis){
         currentRow.classList.add("speaking");
         setStatus("speaking","読み上げ中…");
         nextBtn.disabled = true; backBtn.disabled = true;
@@ -3525,7 +3386,7 @@
   }
 
   nextBtn.addEventListener("click", function(){
-    primeSpeechSynthesis();
+    unlockAudio();
     if (mediaRecorder && mediaRecorder.state === "recording"){
       stopRecording();
     }
