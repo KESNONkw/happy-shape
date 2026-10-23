@@ -229,11 +229,12 @@
   .row.direction{ text-align:center; font-size:.82rem; color:var(--ink-dim); font-style:italic; padding:.5rem 1rem; }
   .row.note{ text-align:center; font-size:.75rem; color:var(--ink-dim); border:1px dashed var(--border); border-radius:8px; padding:.3rem .6rem; margin:.3rem auto; max-width:20rem; }
 
-  .preview-block{ margin-top:.3rem; padding-top:.6rem; border-top:1px dashed var(--border); }
-  .preview-label{ font-size:.62rem; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-dim); margin:0 .2rem .4rem; }
-  .row.preview{ opacity:.48; }
-  .row.line.preview{ background:none; border:none; box-shadow:none; padding:.4rem .5rem; }
-  .row.scene-div.preview{ margin:.7rem 0 .4rem; }
+  /* the whole script is on the stage; rows not reached yet are dimmed, and any row can be tapped to read from there */
+  .row.upcoming{ opacity:.72; }
+  .row[data-idx]{ cursor:pointer; border-radius:var(--radius); -webkit-tap-highlight-color:transparent; }
+  .row[data-idx]:not(.current):hover{ background:color-mix(in srgb, var(--ink) 5%, transparent); opacity:.85; }
+  .row.direction.current{ color:var(--ink); background:var(--surface); box-shadow:0 0 0 1px var(--border) inset; }
+  .row.direction.current.speaking{ box-shadow:0 0 0 1px var(--accent) inset; }
 
   .row.line{ display:flex; gap:.75rem; align-items:flex-start; padding:.55rem .5rem; border-radius:var(--radius); min-width:0; }
   .who{
@@ -453,8 +454,6 @@
   }
   :root[data-ui="mobile"] .row.line.current{ padding:.75rem .7rem; }
   :root[data-ui="mobile"] .row.direction{ font-size:.86rem; padding:.5rem .3rem; }
-  :root[data-ui="mobile"] .preview-block{ margin-top:.5rem; }
-  :root[data-ui="mobile"] .row.line.preview{ padding:.35rem .6rem; }
 
   /* --- footer: the only part of the app in use while actually speaking --- */
   :root[data-ui="mobile"] footer{
@@ -2466,7 +2465,7 @@
     document.documentElement.setAttribute("data-ui", next);
     try { localStorage.setItem("happyShapeUiMode", next); } catch (e){ /* private mode */ }
     renderUiToggle();
-    if (stageEl.style.display !== "none"){ renderPreviewBlock(); scrollToCurrent(); }
+    if (stageEl.style.display !== "none") scrollToCurrent();
   });
   renderUiToggle();
 
@@ -3207,25 +3206,26 @@
 
   function resetLog(){
     state.idx = -1; state.voicedLineCount = 0;
-    stageEl.innerHTML = "";
-    rowsByIndex = {};
-    currentRow = null;
-    previewBlockEl = null;
+    buildStage();
     updateProgress();
   }
 
   function jumpToScene(sceneIdx){
     if (cuesheetEl.style.display !== "none"){ scrollCueSheetToScene(sceneIdx); return; }
-    primeSpeechSynthesis();
-    cancelSpeech();
-    stageEl.innerHTML = "";
-    rowsByIndex = {};
-    currentRow = null;
-    previewBlockEl = null;
-    state.voicedLineCount = 0;
     // find first cue index of scene
     var target = 0;
     for (var i=0;i<CUES.length;i++){ if (CUES[i].sceneIndex === sceneIdx){ target = i; break; } }
+    jumpTo(target);
+  }
+
+  // Start reading from any cue: everything before it counts as read, everything after as upcoming.
+  function jumpTo(target){
+    primeSpeechSynthesis();
+    cancelSpeech();
+    removeEndCard();
+    if (!rowsByIndex[0]) buildStage();
+    for (var i = 0; i < CUES.length; i++) setRowState(i, i < target ? "done" : "upcoming");
+    currentRow = null;
     state.idx = target - 1;
     showScreen("rehearsal");
     setStatus("idle","準備完了");
@@ -3240,6 +3240,13 @@
 
   function updateProgress(){
     progressLabel.textContent = state.voicedLineCount + " / " + totalLineCount + " 行";
+  }
+
+  // lines up to and including cue idx (progress counter after a jump or a step back)
+  function linesThrough(idx){
+    var n = 0;
+    for (var i = 0; i <= idx && i < CUES.length; i++) if (CUES[i].type === "L") n++;
+    return n;
   }
 
   function currentCueIsUserLine(cue){
@@ -3268,7 +3275,7 @@
       row.className = "row note";
       row.textContent = cue.text;
     } else {
-      row.className = "row line current";
+      row.className = "row line";
       var who = document.createElement("div");
       who.className = "who";
       who.style.setProperty("--chip-color", CHAR_META[cue.character] ? CHAR_META[cue.character].color : "inherit");
@@ -3278,69 +3285,41 @@
       say.innerHTML = escapeHtml(cue.text).replace(/([（(][^）)]*[）)])/g, '<span class="beat">$1</span>');
       row.appendChild(who); row.appendChild(say);
     }
+    row.dataset.idx = idxGlobal;
+    row.title = "ここから読む";
+    row.addEventListener("click", function(){ jumpTo(idxGlobal); });
+    if (sceneDivEl){
+      sceneDivEl.dataset.idx = idxGlobal;
+      sceneDivEl.title = "このシーンから読む";
+      sceneDivEl.addEventListener("click", function(){ jumpTo(idxGlobal); });
+    }
     stageEl.appendChild(row);
     rowsByIndex[idxGlobal] = { main: row, sceneDiv: sceneDivEl };
     return row;
   }
 
-  var PREVIEW_COUNT = 5;
-  function previewCount(){ return uiMode() === "mobile" ? 3 : PREVIEW_COUNT; }
-  var previewBlockEl = null;
-
-  function clearPreview(){
-    if (previewBlockEl && previewBlockEl.parentNode) previewBlockEl.parentNode.removeChild(previewBlockEl);
-    previewBlockEl = null;
+  // Lay out the entire script up front so later lines can be scrolled to and tapped.
+  function buildStage(){
+    stageEl.innerHTML = "";
+    rowsByIndex = {};
+    currentRow = null;
+    for (var i = 0; i < CUES.length; i++){
+      appendRow(CUES[i], i);
+      setRowState(i, "upcoming");
+    }
   }
 
-  function renderPreviewBlock(){
-    clearPreview();
-    var items = [];
-    var lineCount = 0;
-    var i = state.idx + 1;
-    var wanted = previewCount();
-    while (i < CUES.length && lineCount < wanted){
-      items.push(CUES[i]);
-      if (CUES[i].type === "L") lineCount++;
-      i++;
-    }
-    if (!items.length) return;
+  function setRowState(idx, kind){
+    var entry = rowsByIndex[idx];
+    if (!entry) return;
+    entry.main.classList.remove("current","speaking","your-turn","done","upcoming");
+    entry.main.classList.add(kind);
+    if (entry.sceneDiv) entry.sceneDiv.classList.toggle("upcoming", kind === "upcoming");
+  }
 
-    var block = document.createElement("div");
-    block.className = "preview-block";
-
-    var label = document.createElement("div");
-    label.className = "preview-label";
-    label.textContent = "この先のセリフ（プレビュー）";
-    block.appendChild(label);
-
-    items.forEach(function(cue){
-      if (cue.type === "N") return;
-      if (cue.sceneStart){
-        var div = document.createElement("div");
-        div.className = "row scene-div preview";
-        div.textContent = SCENES[cue.sceneIndex].title;
-        block.appendChild(div);
-      }
-      var row = document.createElement("div");
-      if (cue.type === "D" || cue.type === "S"){
-        row.className = "row direction preview";
-        row.textContent = cue.text;
-      } else {
-        row.className = "row line preview";
-        var who = document.createElement("div");
-        who.className = "who";
-        who.style.setProperty("--chip-color", CHAR_META[cue.character] ? CHAR_META[cue.character].color : "inherit");
-        who.textContent = cue.character;
-        var say = document.createElement("div");
-        say.className = "say";
-        say.innerHTML = escapeHtml(cue.text).replace(/([（(][^）)]*[）)])/g, '<span class="beat">$1</span>');
-        row.appendChild(who); row.appendChild(say);
-      }
-      block.appendChild(row);
-    });
-
-    stageEl.appendChild(block);
-    previewBlockEl = block;
+  function removeEndCard(){
+    var endCard = document.getElementById("end-card");
+    if (endCard && endCard.parentNode) endCard.parentNode.removeChild(endCard);
   }
 
   function scrollToCurrent(){
@@ -3353,7 +3332,7 @@
 
   function markRowDone(row){
     if (!row) return;
-    row.classList.remove("current","speaking","your-turn");
+    row.classList.remove("current","speaking","your-turn","upcoming");
     row.classList.add("done");
   }
 
@@ -3369,10 +3348,11 @@
       showEnd();
       return;
     }
-    currentRow = appendRow(cue, state.idx);
-    if (cue.type === "L") state.voicedLineCount++;
+    if (!rowsByIndex[state.idx]) buildStage();
+    setRowState(state.idx, "current");
+    currentRow = rowsByIndex[state.idx].main;
+    state.voicedLineCount = linesThrough(state.idx);
     updateProgress();
-    renderPreviewBlock();
     scrollToCurrent();
     updateRecordUI();
 
@@ -3408,7 +3388,8 @@
         // direction/sound/note with no voice: brief pause then continue automatically
         setStatus("idle","準備完了");
         nextBtn.disabled = true; backBtn.disabled = true;
-        setTimeout(revealNext, 350);
+        var pauseEpoch = playbackEpoch;   // a tap-to-jump in the meantime takes over the flow
+        setTimeout(function(){ if (pauseEpoch === playbackEpoch) revealNext(); }, 350);
       }
     } else {
       // missing-cast mode: every cue needs a manual click, but absent-role lines auto-speak on reveal
@@ -3441,20 +3422,13 @@
     if (state.idx <= 0) return;
     cancelSpeech();
 
-    var endCard = document.getElementById("end-card");
-    if (endCard && endCard.parentNode) endCard.parentNode.removeChild(endCard);
-    clearPreview();
+    removeEndCard();
 
-    // discard the row for the current (last revealed) cue entirely
-    var entry = rowsByIndex[state.idx];
-    if (entry){
-      if (entry.main && entry.main.parentNode) stageEl.removeChild(entry.main);
-      if (entry.sceneDiv && entry.sceneDiv.parentNode) stageEl.removeChild(entry.sceneDiv);
-      delete rowsByIndex[state.idx];
-    }
-    if (CUES[state.idx] && CUES[state.idx].type === "L") state.voicedLineCount = Math.max(0, state.voicedLineCount - 1);
+    // the current cue goes back to "not read yet"
+    setRowState(state.idx, "upcoming");
 
     state.idx--;
+    state.voicedLineCount = linesThrough(state.idx);
     updateProgress();
 
     var cue = CUES[state.idx];
@@ -3484,13 +3458,12 @@
     }
     nextBtn.disabled = false;
     backBtn.disabled = state.idx <= 0;
-    renderPreviewBlock();
     scrollToCurrent();
     updateRecordUI();
   }
 
   function showEnd(){
-    clearPreview();
+    removeEndCard();
     var div = document.createElement("div");
     div.id = "end-card";
     div.textContent = "— 台本の最後まで読み終えました —";
