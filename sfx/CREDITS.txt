@@ -1,0 +1,15 @@
+効果音のクレジット / Sound credits
+
+door-open.wav     "open closet door" by Gravity Sound — CC BY 4.0
+                  https://commons.wikimedia.org/wiki/File:Open_closet_door_(Gravity_Sound).wav
+door-close.wav    "close door" by Gravity Sound — CC BY 4.0
+                  https://commons.wikimedia.org/wiki/File:Close_door_(Gravity_Sound).wav
+line.wav          "Notification" by Gravity Sound — CC BY 4.0
+                  https://commons.wikimedia.org/wiki/File:Notification_(Gravity_Sound).wav
+notification.wav  "Notification 2" by Gravity Sound — CC BY 4.0
+                  https://commons.wikimedia.org/wiki/File:Notification_2_(Gravity_Sound).wav
+
+いずれもモノラル 22.05kHz に変換し、前後の無音を詰めて音量をそろえています。
+License: https://creativecommons.org/licenses/by/4.0/
+
+chime.wav / ringtone.wav はこのアプリ用に合成したオリジナル音源です。

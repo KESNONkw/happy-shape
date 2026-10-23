@@ -608,6 +608,11 @@
       <span>ト書き・効果音も読み上げる</span>
       <input type="checkbox" id="voice-directions-toggle">
     </div>
+    <div class="toggle-row">
+      <span>効果音を鳴らす</span>
+      <input type="checkbox" id="sfx-toggle" checked>
+    </div>
+    <p class="hint">効果音の一部は Gravity Sound 作（CC BY 4.0）。<a href="sfx/CREDITS.txt" target="_blank" rel="noopener">クレジット</a></p>
   </div>
 
   <div class="drawer-section">
@@ -2211,6 +2216,46 @@
     });
   }
 
+  /* ---------------- sound effects ----------------
+     A sound cue ("S") whose text names a known effect plays the matching file
+     from sfx/. Matching is by keyword rather than cue index so it also works for
+     imported scripts and survives edits to the script. */
+  var SFX_RULES = [
+    [/チャイム/, "chime"],
+    [/着信/, "ringtone"],
+    [/(扉|ドア)が開/, "door-open"],
+    [/(扉|ドア)が閉/, "door-close"],
+    [/LINE|ライン/i, "line"],
+    [/通知音/, "notification"]
+  ];
+  var sfxOn = true;
+  try { sfxOn = localStorage.getItem("happyShapeSfx") !== "off"; } catch (e){ /* private mode */ }
+  var sfxBlobCache = {};
+
+  function sfxForCue(cue){
+    if (!sfxOn || !cue || cue.type !== "S") return null;
+    for (var i = 0; i < SFX_RULES.length; i++){
+      if (SFX_RULES[i][0].test(cue.text)) return "sfx/" + SFX_RULES[i][1] + ".wav";
+    }
+    return null;
+  }
+
+  // A missing or unplayable file just ends the cue, so the run never stalls on it.
+  function playSfx(url, onend){
+    var epoch = playbackEpoch;
+    if (!sfxBlobCache[url]){
+      sfxBlobCache[url] = fetch(url).then(function(res){
+        if (!res.ok) throw new Error("sfx-miss");
+        return res.blob();
+      }).catch(function(){ delete sfxBlobCache[url]; return null; });
+    }
+    sfxBlobCache[url].then(function(blob){
+      if (epoch !== playbackEpoch) return;
+      if (blob) playBlob(blob, onend, epoch);
+      else if (onend) onend();
+    });
+  }
+
   function cancelSpeech(){
     newPlaybackEpoch();
     if (synthAvailable){ try { speechSynthesis.cancel(); } catch (e){ /* ignore */ } }
@@ -2357,6 +2402,13 @@
 
   document.getElementById("voice-directions-toggle").addEventListener("change", function(e){
     voiceDirectionsOn = e.target.checked;
+  });
+
+  var sfxToggle = document.getElementById("sfx-toggle");
+  sfxToggle.checked = sfxOn;
+  sfxToggle.addEventListener("change", function(e){
+    sfxOn = e.target.checked;
+    try { localStorage.setItem("happyShapeSfx", sfxOn ? "on" : "off"); } catch (err){ /* private mode */ }
   });
 
   function renderVoiceAssignList(){
@@ -3073,6 +3125,7 @@
 
     var speakThis = currentCueShouldSpeak(cue);
     var isUserLine = currentCueIsUserLine(cue);
+    var sfxUrl = sfxForCue(cue);
     var thisIdx = state.idx;
 
     if (state.mode === "solo"){
@@ -3082,6 +3135,14 @@
         nextBtn.textContent = "読み終えたら次へ";
         nextBtn.className = "btn primary wait-you";
         nextBtn.disabled = false; backBtn.disabled = state.idx === 0;
+      } else if (sfxUrl){
+        currentRow.classList.add("speaking");
+        setStatus("speaking","効果音…");
+        nextBtn.disabled = true; backBtn.disabled = true;
+        playSfx(sfxUrl, function(){
+          setStatus("idle","準備完了");
+          revealNext();
+        });
       } else if (speakThis || (cue.type !== "L" && voiceDirectionsOn)){
         currentRow.classList.add("speaking");
         setStatus("speaking","読み上げ中…");
@@ -3100,7 +3161,15 @@
       // missing-cast mode: every cue needs a manual click, but absent-role lines auto-speak on reveal
       nextBtn.textContent = "次へ";
       nextBtn.className = "btn primary";
-      if (speakThis){
+      if (sfxUrl){
+        currentRow.classList.add("speaking");
+        setStatus("speaking","効果音…");
+        nextBtn.disabled = true; backBtn.disabled = true;
+        playSfx(sfxUrl, function(){
+          setStatus("idle","準備完了");
+          nextBtn.disabled = false; backBtn.disabled = state.idx === 0;
+        });
+      } else if (speakThis){
         currentRow.classList.add("speaking");
         setStatus("speaking","代役で読み上げ中…");
         nextBtn.disabled = true; backBtn.disabled = true;
