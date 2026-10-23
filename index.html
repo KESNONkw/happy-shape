@@ -313,6 +313,9 @@
   .btn.primary.wait-you{ background:var(--accent-2); border-color:var(--accent-2); }
   .btn.ghost{ background:transparent; }
 
+  .follow-btn{ padding:.25rem .7rem; font-size:.78rem; border-color:var(--accent); color:var(--accent); font-weight:700; }
+  .follow-btn[hidden]{ display:none; }
+
   /* ---------- sound-cue practice sheet ---------- */
   .cs-bar{ display:flex; flex-wrap:wrap; gap:.5rem .7rem; align-items:center; margin-bottom:.8rem; }
   .cs-next{ flex:1 1 12rem; font-size:.85rem; color:var(--ink-dim); }
@@ -636,6 +639,7 @@
 <footer id="footer" style="display:none;">
   <div class="status-line">
     <span class="status-pill" id="status-pill">準備完了</span>
+    <button class="btn ghost follow-btn" id="follow-btn" hidden title="自動スクロールを再開して、今読んでいる行へ戻る">▼ 今の行へ</button>
     <span id="progress-label" style="margin-left:auto; font-family:var(--mono); font-variant-numeric:tabular-nums;"></span>
   </div>
   <div class="record-row" id="record-row">
@@ -3206,6 +3210,7 @@
 
   function resetLog(){
     state.idx = -1; state.voicedLineCount = 0;
+    setFollow(true);
     buildStage();
     updateProgress();
   }
@@ -3227,6 +3232,7 @@
     for (var i = 0; i < CUES.length; i++) setRowState(i, i < target ? "done" : "upcoming");
     currentRow = null;
     state.idx = target - 1;
+    setFollow(true);
     showScreen("rehearsal");
     setStatus("idle","準備完了");
     revealNext();
@@ -3322,9 +3328,44 @@
     if (endCard && endCard.parentNode) endCard.parentNode.removeChild(endCard);
   }
 
-  function scrollToCurrent(){
-    if (currentRow) currentRow.scrollIntoView({ behavior:"smooth", block:"center" });
+  // The stage follows the current line until the reader scrolls away on their own;
+  // from then on advancing leaves the view where they put it, and "今の行へ"
+  // (or tapping a line, ◀ 戻る, 最初から) brings it back and resumes following.
+  var followCurrent = true;
+  var followBtn = document.getElementById("follow-btn");
+  var scrollAreaEl = document.querySelector("main");
+
+  function setFollow(on){
+    followCurrent = on;
+    followBtn.hidden = on;
   }
+
+  function scrollToCurrent(){
+    if (followCurrent && currentRow) currentRow.scrollIntoView({ behavior:"smooth", block:"center" });
+  }
+
+  function resumeFollow(){
+    setFollow(true);
+    scrollToCurrent();
+  }
+
+  // Only scrolling the reader does counts: the app's own scrollIntoView fires
+  // "scroll" too, so listen for the inputs that cause a manual scroll instead.
+  function pauseFollowByUser(){
+    if (stageEl.style.display !== "none" && followCurrent) setFollow(false);
+  }
+  scrollAreaEl.addEventListener("wheel", pauseFollowByUser, { passive:true });
+  scrollAreaEl.addEventListener("touchmove", pauseFollowByUser, { passive:true });
+  scrollAreaEl.addEventListener("pointerdown", function(e){
+    // a press on the scrollbar itself lands on the scroll area, right of its content box
+    if (e.target === scrollAreaEl && e.offsetX >= scrollAreaEl.clientWidth) pauseFollowByUser();
+  });
+  document.addEventListener("keydown", function(e){
+    if (["PageUp","PageDown","ArrowUp","ArrowDown","Home","End"].indexOf(e.key) === -1) return;
+    if (["INPUT","SELECT","TEXTAREA"].indexOf(document.activeElement.tagName) !== -1) return;
+    pauseFollowByUser();
+  });
+  followBtn.addEventListener("click", resumeFollow);
 
   function escapeHtml(s){
     return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
@@ -3428,6 +3469,7 @@
   function goBack(){
     if (state.idx <= 0) return;
     cancelSpeech();
+    setFollow(true);
 
     removeEndCard();
 
@@ -3475,7 +3517,7 @@
     div.id = "end-card";
     div.textContent = "— 台本の最後まで読み終えました —";
     stageEl.appendChild(div);
-    div.scrollIntoView({ behavior:"smooth", block:"end" });
+    if (followCurrent) div.scrollIntoView({ behavior:"smooth", block:"end" });
     setStatus("idle","終了");
     nextBtn.disabled = true; backBtn.disabled = state.idx <= 0;
     nextBtn.textContent = "終了";
