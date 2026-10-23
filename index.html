@@ -3483,6 +3483,16 @@
   var currentRow = null;
   var rowsByIndex = {};
 
+  // While a line, sound effect or short pause plays on its own, 次へ stays live:
+  // pressing it cuts the audio and moves on. revealNext() starts a new playback
+  // epoch, so the interrupted audio's "finished" callback is simply ignored.
+  function skippable(){
+    nextBtn.textContent = "次へ";
+    nextBtn.className = "btn primary";
+    nextBtn.disabled = false;
+    backBtn.disabled = true;
+  }
+
   function revealNext(){
     newPlaybackEpoch();
     markRowDone(currentRow);
@@ -3516,7 +3526,7 @@
       } else if (sfxUrl){
         currentRow.classList.add("speaking");
         setStatus("speaking","効果音…");
-        nextBtn.disabled = true; backBtn.disabled = true;
+        skippable();
         playSfx(sfxUrl, function(){
           setStatus("idle","準備完了");
           revealNext();
@@ -3524,7 +3534,7 @@
       } else if (speakThis){
         currentRow.classList.add("speaking");
         setStatus("speaking","読み上げ中…");
-        nextBtn.disabled = true; backBtn.disabled = true;
+        skippable();
         speakOrPlayback(thisIdx, cue, function(){
           setStatus("idle","準備完了");
           revealNext();
@@ -3532,7 +3542,7 @@
       } else {
         // direction/sound/note with no voice: brief pause then continue automatically
         setStatus("idle","準備完了");
-        nextBtn.disabled = true; backBtn.disabled = true;
+        skippable();
         var pauseEpoch = playbackEpoch;   // a tap-to-jump in the meantime takes over the flow
         setTimeout(function(){ if (pauseEpoch === playbackEpoch) revealNext(); }, 350);
       }
@@ -3545,7 +3555,7 @@
       if (sfxUrl){
         currentRow.classList.add("speaking");
         setStatus("speaking","効果音…");
-        nextBtn.disabled = true; backBtn.disabled = true;
+        skippable();
         playSfx(sfxUrl, function(){
           setStatus("idle","準備完了");
           revealNext();
@@ -3553,14 +3563,14 @@
       } else if (speakThis){
         currentRow.classList.add("speaking");
         setStatus("speaking", cue.type === "L" ? "代役で読み上げ中…" : "読み上げ中…");
-        nextBtn.disabled = true; backBtn.disabled = true;
+        skippable();
         speakOrPlayback(thisIdx, cue, function(){
           setStatus("idle","準備完了");
           revealNext();
         });
       } else if (cue.type !== "L"){
         setStatus("idle","準備完了");
-        nextBtn.disabled = true; backBtn.disabled = true;
+        skippable();
         var skipEpoch = playbackEpoch;   // a tap-to-jump in the meantime takes over the flow
         setTimeout(function(){ if (skipEpoch === playbackEpoch) revealNext(); }, 350);
       } else {
