@@ -600,7 +600,7 @@
     <fieldset id="missing-fields" style="display:none;">
       <legend>今日いない役を選ぶ（複数可・全員いれば選ばなくてOK）</legend>
       <div class="role-grid" id="missing-role-grid"></div>
-      <p class="hint">選んだ役のセリフだけ自動で読み上げます。それ以外は表示のみ。1行ごとに「次へ」を押して進めます。誰も選ばずに始めると、効果音だけを鳴らして進められます。</p>
+      <p class="hint">選んだ役のセリフは自動で読み上げ、そのまま次へ進みます。ト書きは飛ばし、効果音は鳴らしてから進みます。止まるのは現場の人が読むセリフだけで、読み終えたら「次へ」を押してください。誰も選ばずに始めると、効果音だけを鳴らして進められます。</p>
     </fieldset>
 
     <p class="warn-banner" id="tts-warning" style="display:none;">お使いのブラウザは音声読み上げ（Web Speech API）に対応していません。文字表示のみで進行します。</p>
@@ -3392,7 +3392,9 @@
         setTimeout(function(){ if (pauseEpoch === playbackEpoch) revealNext(); }, 350);
       }
     } else {
-      // missing-cast mode: every cue needs a manual click, but absent-role lines auto-speak on reveal
+      // missing-cast mode: only lines read by someone present wait for a click.
+      // Sound effects and absent-role lines play and then carry on by themselves,
+      // and directions are passed over the same way solo mode does.
       nextBtn.textContent = "次へ";
       nextBtn.className = "btn primary";
       if (sfxUrl){
@@ -3401,18 +3403,23 @@
         nextBtn.disabled = true; backBtn.disabled = true;
         playSfx(sfxUrl, function(){
           setStatus("idle","準備完了");
-          nextBtn.disabled = false; backBtn.disabled = state.idx === 0;
+          revealNext();
         });
       } else if (speakThis){
         currentRow.classList.add("speaking");
-        setStatus("speaking","代役で読み上げ中…");
+        setStatus("speaking", cue.type === "L" ? "代役で読み上げ中…" : "読み上げ中…");
         nextBtn.disabled = true; backBtn.disabled = true;
         speakOrPlayback(thisIdx, cue, function(){
-          setStatus("idle","準備完了（現場で読んでください）");
-          nextBtn.disabled = false; backBtn.disabled = state.idx === 0;
+          setStatus("idle","準備完了");
+          revealNext();
         });
+      } else if (cue.type !== "L"){
+        setStatus("idle","準備完了");
+        nextBtn.disabled = true; backBtn.disabled = true;
+        var skipEpoch = playbackEpoch;   // a tap-to-jump in the meantime takes over the flow
+        setTimeout(function(){ if (skipEpoch === playbackEpoch) revealNext(); }, 350);
       } else {
-        setStatus("idle", cue.type === "L" ? "現場で読んでください" : "準備完了");
+        setStatus("you","現場で読んでください");
         nextBtn.disabled = false; backBtn.disabled = state.idx === 0;
       }
     }
