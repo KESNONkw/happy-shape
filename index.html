@@ -1411,6 +1411,23 @@
     return decodeBlob(blob).then(function(buf){ return encodeWav(buf, gain); }, function(){ return blob; });
   }
 
+  // "Clearly nothing was said": under ~0.2 s of the take rises above a quiet room's
+  // background (20 ms windows louder than about -34 dBFS). Kept deliberately loose so
+  // it only ever asks about takes that really are empty; anything it can't decode
+  // counts as voiced.
+  function takeHasVoice(blob){
+    if (!OfflineCtx || !blob.arrayBuffer) return Promise.resolve(true);
+    return decodeBlob(blob).then(function(buf){
+      var d = buf.getChannelData(0), win = Math.max(1, Math.floor(buf.sampleRate * 0.02)), loud = 0;
+      for (var i = 0; i + win <= d.length; i += win){
+        var s = 0;
+        for (var j = i; j < i + win; j++) s += d[j] * d[j];
+        if (Math.sqrt(s / win) > 0.02) loud++;
+      }
+      return loud * 0.02 >= 0.2;
+    }, function(){ return true; });
+  }
+
   function playLineAudio(found, charName, onend, epoch){
     var kind = found.source === "static" ? "synth" : "rec";
     withGain(found.blob, roleVolume(charName, kind)).then(function(b){
@@ -2023,7 +2040,16 @@
           updateRecordUI();
           return;
         }
-        persistTake(savedCueIndex, CUES[savedCueIndex].character, blob, Date.now());
+        var advance = mr.advanceAfterSave === true;   // 録音 mode's "保存して次へ"
+        takeHasVoice(blob).then(function(voiced){
+          var cue = CUES[savedCueIndex];
+          var keep = voiced || confirm(cue.character + "「" + (cue.text.length > 30 ? cue.text.slice(0, 30) + "…" : cue.text) +
+            "」の録音に、声が入っていないようです。\nこのまま保存しますか？\n\n［キャンセル］保存しません。このセリフを録り直せます。");
+          if (keep) persistTake(savedCueIndex, cue.character, blob, Date.now());
+          else updateRecordUI();
+          // an empty take that wasn't kept leaves the run on this line to record it again
+          if (advance && keep && state.idx === savedCueIndex){ markRowDone(currentRow); revealNext(); }
+        });
       };
 
       mr.start();
@@ -3235,6 +3261,7 @@
     var rec = isRecordingNow(idx);
     nextBtn.textContent = rec ? "■ 保存して次へ" : "● 録音開始";
     nextBtn.className = "btn primary wait-you" + (rec ? " recording" : "");
+    nextBtn.disabled = false;
     document.getElementById("rec-redo-btn").disabled = !recordingSupported;
     document.getElementById("rec-pause-btn").disabled = !rec;
   }
@@ -3615,9 +3642,9 @@
     unlockAudio();
     if (state.mode === "rec" && CUES[state.idx] && currentCueIsUserLine(CUES[state.idx])){
       if (mediaRecorder && mediaRecorder.state === "recording"){
-        stopRecording();              // saves the take
-        markRowDone(currentRow);
-        revealNext();
+        mediaRecorder.advanceAfterSave = true;   // moves on once the take is checked and saved
+        nextBtn.disabled = true;
+        stopRecording();
       } else {
         state.recArmed = true;        // from here on, each recorded line starts by itself
         startRecording();
