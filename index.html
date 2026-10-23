@@ -536,6 +536,7 @@
     <p class="hint manual-note">使い方が分からないときは
       <a href="https://kesnonkw.github.io/happy-shape/manual.pdf" target="_blank" rel="noopener" class="manual-link">📘 操作マニュアル（PDF）</a>
     </p>
+    <p class="hint"><a href="https://voicevox.hiroshiba.jp/" target="_blank" rel="noopener">セリフ音声：VOICEVOX:春日部つむぎ、VOICEVOX:冥鳴ひまり、VOICEVOX:白上虎太郎、VOICEVOX:青山龍星、VOICEVOX:九州そら</a>。</p>
     <p class="hint">使用した音素材：<a href="https://otologic.jp" target="_blank" rel="noopener">OtoLogic</a>（https://otologic.jp、<a href="https://creativecommons.org/licenses/by/4.0/deed.ja" target="_blank" rel="noopener">CC BY 4.0</a>）、<a href="https://soundeffect-lab.info" target="_blank" rel="noopener">効果音ラボ</a>／効果音：<a href="https://pocket-se.info/" target="_blank" rel="noopener">ポケットサウンド – https://pocket-se.info/</a>。音量調整などの加工をしています。<a href="sfx/CREDITS.txt" target="_blank" rel="noopener">詳しいクレジット</a></p>
   </section>
 
@@ -678,6 +679,7 @@
       <span>効果音を鳴らす</span>
       <input type="checkbox" id="sfx-toggle" checked>
     </div>
+    <p class="hint">セリフ音声：VOICEVOX:春日部つむぎ、VOICEVOX:冥鳴ひまり、VOICEVOX:白上虎太郎、VOICEVOX:青山龍星、VOICEVOX:九州そら。</p>
     <p class="hint">使用した音素材：OtoLogic（https://otologic.jp、CC BY 4.0）、効果音ラボ／効果音：ポケットサウンド – https://pocket-se.info/。<a href="sfx/CREDITS.txt" target="_blank" rel="noopener">クレジット</a></p>
   </div>
 
@@ -2143,9 +2145,9 @@
         return;
       }
       if (found.source === "static"){
-        // baked into the deployed site's files: not deletable from the app
+        // pre-generated VOICEVOX audio shipped with the site; a real take replaces it
         recordStatusEl.className = "record-status has-audio";
-        recordStatusEl.textContent = "☁ 共有録音あり（タップで試聴）";
+        recordStatusEl.textContent = "🤖 合成音声（タップで試聴・録音すると置き換わります）";
         recDeleteBtn.disabled = false;
         return;
       }

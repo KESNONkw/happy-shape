@@ -5,6 +5,20 @@
 - アプリ: https://kesnonkw.github.io/happy-shape/
 - 操作マニュアル: https://kesnonkw.github.io/happy-shape/manual.pdf
 
+## セリフ音声のクレジット
+
+`recordings/hakoi-kata-1023/` のセリフ音声は [VOICEVOX](https://voicevox.hiroshiba.jp/) で生成しています。
+
+| 役 | 音声 |
+|---|---|
+| 知恵 | VOICEVOX:春日部つむぎ |
+| 永遠 | VOICEVOX:冥鳴ひまり |
+| 学 | VOICEVOX:白上虎太郎 |
+| 父 | VOICEVOX:青山龍星 |
+| 母 | VOICEVOX:九州そら |
+
+アプリ内で誰かが録音したセリフは、合成音声より優先して再生されます。
+
 ## 効果音のクレジット
 
 使用した音素材：OtoLogic（https://otologic.jp）— [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.ja)／効果音：[効果音ラボ](https://soundeffect-lab.info)、[ポケットサウンド – https://pocket-se.info/](https://pocket-se.info/)
