@@ -1,17 +1,34 @@
 効果音のクレジット / Sound credits
+==================================
 
-chime.wav         "Japanese_School_Bell02-03(Slow-Short)" by OtoLogic — CC BY 4.0
-                  https://otologic.jp
-door-open.wav     "open closet door" by Gravity Sound — CC BY 4.0
-                  https://commons.wikimedia.org/wiki/File:Open_closet_door_(Gravity_Sound).wav
-door-close.wav    "close door" by Gravity Sound — CC BY 4.0
-                  https://commons.wikimedia.org/wiki/File:Close_door_(Gravity_Sound).wav
-line.wav          "Notification" by Gravity Sound — CC BY 4.0
-                  https://commons.wikimedia.org/wiki/File:Notification_(Gravity_Sound).wav
-notification.wav  "Notification 2" by Gravity Sound — CC BY 4.0
-                  https://commons.wikimedia.org/wiki/File:Notification_2_(Gravity_Sound).wav
+このフォルダの効果音のうち、以下は第三者の素材を使用しています。
+いずれもクリエイティブ・コモンズ 表示 4.0 国際（CC BY 4.0）で提供されているものです。
+ライセンス: https://creativecommons.org/licenses/by/4.0/deed.ja
 
-いずれもモノラル 22.05kHz に変換し、スマホのスピーカーで聞こえやすいよう低音を削って音量を最大化しています。
-License: https://creativecommons.org/licenses/by/4.0/
+■ 使用した音素材：OtoLogic（https://otologic.jp）
+  chime.wav
+    元素材: 「Japanese_School_Bell02-03(Slow-Short)」 by OtoLogic — CC BY 4.0
+    利用規約: https://otologic.jp/free/license.html
 
-ringtone.wav はこのアプリ用に合成したオリジナル音源です。
+■ 使用した音素材：Gravity Sound（Wikimedia Commons 経由）
+  door-open.wav     元素材: "open closet door" by Gravity Sound — CC BY 4.0
+                    https://commons.wikimedia.org/wiki/File:Open_closet_door_(Gravity_Sound).wav
+  door-close.wav    元素材: "close door" by Gravity Sound — CC BY 4.0
+                    https://commons.wikimedia.org/wiki/File:Close_door_(Gravity_Sound).wav
+  line.wav          元素材: "Notification" by Gravity Sound — CC BY 4.0
+                    https://commons.wikimedia.org/wiki/File:Notification_(Gravity_Sound).wav
+  notification.wav  元素材: "Notification 2" by Gravity Sound — CC BY 4.0
+                    https://commons.wikimedia.org/wiki/File:Notification_2_(Gravity_Sound).wav
+
+■ 加工について（改変あり）
+  上記の素材は、本アプリでの再生用に次の加工をしています。
+  ・モノラル 22.05kHz の WAV 形式に変換
+  ・スマートフォンのスピーカーで聞こえやすいよう、低音域のカットと中高音域の強調
+  ・リミッターによる音量の最大化、前後の無音の調整とフェードイン／アウト
+
+■ オリジナル音源
+  ringtone.wav はこのアプリ用に合成したオリジナル音源です。
+
+■ 備考
+  ・本アプリは各素材の権利者から個別の協力・支持・認証を受けたものではありません。
+  ・これらの音源ファイルを再利用・再配布する場合も、上記のクレジット表記を引き継いでください。
