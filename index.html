@@ -597,7 +597,7 @@
         </button>
         <button type="button" class="mode-card" data-mode="rec" aria-pressed="false">
           <b>まとめて録音</b>
-          <span>個人練習と同じ画面で、選んだ役（複数可）のセリフを録音。「保存して次へ」1回で進み、次に録音するセリフで自動的に録音が始まります。</span>
+          <span>個人練習と同じ画面で、選んだ役（複数可）のセリフを録音。「● 録音開始」→「■ 保存して次へ」で、録音して次のセリフへ進みます。</span>
         </button>
       </div>
     </fieldset>
@@ -1294,7 +1294,6 @@
     state.myRole = null;
     state.absent = {};
     state.recRoles = {};
-    state.recArmed = false;
     state.idx = -1;
     state.voicedLineCount = 0;
 
@@ -1310,7 +1309,6 @@
     myRole: null,
     absent: {},             // charName -> true
     recRoles: {},           // charName -> true: roles being recorded
-    recArmed: false,        // after the first take, each recorded line starts recording on arrival
     idx: -1,                // index of last revealed cue in CUES
     voicedLineCount: 0,     // count of L cues revealed, for progress
     speaking: false
@@ -3251,8 +3249,8 @@
 
   /* ---------------- 録音 mode ----------------
      The rehearsal run, stopping on the chosen roles' lines to record them. The
-     main button is "● 録音開始" then "■ 保存して次へ"; after the first take each
-     recorded line starts recording as soon as the run reaches it. */
+     main button is "● 録音開始" then "■ 保存して次へ". A take only ever starts from
+     that button, so arriving at the next recorded line never starts the mic. */
   function isRecordingNow(idx){
     return !!mediaRecorder && mediaRecorder.state === "recording" && recordingCueIndex === idx;
   }
@@ -3269,12 +3267,6 @@
   function arriveAtRecordedLine(idx){
     setStatus("you", "録音する番です");
     updateRecordUI();
-    if (!state.recArmed || !recordingSupported) return;
-    // a short gap so the cue line's tail isn't the first sound of this take
-    var epoch = playbackEpoch;
-    setTimeout(function(){
-      if (state.idx === idx && epoch === playbackEpoch && !isRecordingNow(idx)) startRecording();
-    }, 350);
   }
 
   // Throw away the take in progress without saving it.
@@ -3294,7 +3286,6 @@
     discardTake(function(){ startRecording(); });
   });
   document.getElementById("rec-pause-btn").addEventListener("click", function(){
-    state.recArmed = false;        // stay here; the next line waits for 録音開始 again
     stopRecording();
   });
   document.getElementById("rec-skip-btn").addEventListener("click", function(){
@@ -3313,7 +3304,6 @@
 
   function resetLog(){
     state.idx = -1; state.voicedLineCount = 0;
-    state.recArmed = false;
     setFollow(true);
     buildStage();
     updateProgress();
@@ -3646,7 +3636,6 @@
         nextBtn.disabled = true;
         stopRecording();
       } else {
-        state.recArmed = true;        // from here on, each recorded line starts by itself
         startRecording();
       }
       return;
