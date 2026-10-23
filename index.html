@@ -313,6 +313,11 @@
   .btn.primary.wait-you{ background:var(--accent-2); border-color:var(--accent-2); }
   .btn.ghost{ background:transparent; }
 
+  .vol-row{ margin-bottom:.8rem; }
+  .vol-name{ font-weight:700; font-size:.85rem; margin-bottom:.15rem; }
+  .vol-line{ display:grid; grid-template-columns:3.6rem 1fr 3rem; align-items:center; gap:.4rem; font-size:.76rem; color:var(--ink-dim); }
+  .vol-line input{ width:100%; accent-color:var(--accent); }
+  .vol-line output{ font-family:var(--mono); font-variant-numeric:tabular-nums; text-align:right; color:var(--ink); }
   .follow-btn{ padding:.25rem .7rem; font-size:.78rem; border-color:var(--accent); color:var(--accent); font-weight:700; }
   .follow-btn[hidden]{ display:none; }
 
@@ -673,6 +678,13 @@
     </div>
     <p class="hint">セリフ音声：VOICEVOX:春日部つむぎ、VOICEVOX:冥鳴ひまり、VOICEVOX:白上虎太郎、VOICEVOX:青山龍星、VOICEVOX:九州そら。</p>
     <p class="hint">使用した音素材：OtoLogic（https://otologic.jp、CC BY 4.0）、効果音ラボ／効果音：ポケットサウンド – https://pocket-se.info/。<a href="sfx/CREDITS.txt" target="_blank" rel="noopener">クレジット</a></p>
+  </div>
+
+  <div class="drawer-section">
+    <h4>役ごとの音量</h4>
+    <p class="hint" style="margin-top:0;">合成音声と録音した声を別々に調整できます。次に流れるセリフから反映され、この端末だけに保存されます。</p>
+    <div id="volume-list"></div>
+    <button class="btn ghost" id="volume-reset-btn" style="width:100%;margin-top:.4rem;">すべて100%に戻す</button>
   </div>
 </aside>
 
@@ -1269,6 +1281,7 @@
 
     renderRoleGrids();
     renderSceneJump();
+    renderVolumeList();
     updateStartEnabled();
   }
 
@@ -1316,6 +1329,72 @@
     var spoken = stripParentheticals(text || "");
     var ms = spoken ? Math.min(4000, 600 + spoken.length * 90) : 700;
     setTimeout(function(){ onend && onend(); }, ms);
+  }
+
+  /* ---------------- per-role volume ----------------
+     Each role has two levels, one for its generated voice and one for takes people
+     recorded, so a role whose lines are half recorded can be evened out. Kept per
+     device: phones and speakers differ. iPhone ignores <audio>.volume, so the level
+     is applied to the sound itself: decode, scale, re-encode as WAV, then play. */
+  var VOLUME_KEY = "happyShapeVolumes";
+  var VOLUME_MAX = 3;          // phone recordings often need well over 100%
+  var roleVolumes = {};        // charName -> { synth: 1, rec: 1 }
+  try { roleVolumes = JSON.parse(localStorage.getItem(VOLUME_KEY) || "{}") || {}; } catch (e){ roleVolumes = {}; }
+
+  function roleVolume(charName, kind){
+    var v = roleVolumes[charName] && roleVolumes[charName][kind];
+    return typeof v === "number" ? v : 1;
+  }
+
+  function setRoleVolume(charName, kind, value){
+    if (!roleVolumes[charName]) roleVolumes[charName] = {};
+    roleVolumes[charName][kind] = value;
+    try { localStorage.setItem(VOLUME_KEY, JSON.stringify(roleVolumes)); } catch (e){ /* private mode */ }
+  }
+
+  var OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+
+  function decodeBlob(blob){
+    return blob.arrayBuffer().then(function(ab){
+      var ctx = new OfflineCtx(1, 1, 44100);
+      return new Promise(function(resolve, reject){
+        var p = ctx.decodeAudioData(ab, resolve, reject);   // older Safari only has the callback form
+        if (p && p.then) p.then(resolve, reject);
+      });
+    });
+  }
+
+  function encodeWav(buffer, gain){
+    var n = buffer.length, chs = buffer.numberOfChannels, rate = buffer.sampleRate;
+    var data = [];
+    for (var c = 0; c < chs; c++) data.push(buffer.getChannelData(c));
+    var out = new DataView(new ArrayBuffer(44 + n * 2));
+    function str(o, s){ for (var i = 0; i < s.length; i++) out.setUint8(o + i, s.charCodeAt(i)); }
+    str(0, "RIFF"); out.setUint32(4, 36 + n * 2, true); str(8, "WAVEfmt ");
+    out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, 1, true);
+    out.setUint32(24, rate, true); out.setUint32(28, rate * 2, true); out.setUint16(32, 2, true); out.setUint16(34, 16, true);
+    str(36, "data"); out.setUint32(40, n * 2, true);
+    for (var i = 0; i < n; i++){
+      var s = 0;
+      for (var k = 0; k < chs; k++) s += data[k][i];
+      s = s / chs * gain;
+      if (s > 1) s = 1; else if (s < -1) s = -1;
+      out.setInt16(44 + i * 2, s < 0 ? s * 32768 : s * 32767, true);
+    }
+    return new Blob([out.buffer], { type: "audio/wav" });
+  }
+
+  // Unity gain, no Web Audio, or a codec this browser can't decode: play it as is.
+  function withGain(blob, gain){
+    if (Math.abs(gain - 1) < 0.01 || !OfflineCtx || !blob.arrayBuffer) return Promise.resolve(blob);
+    return decodeBlob(blob).then(function(buf){ return encodeWav(buf, gain); }, function(){ return blob; });
+  }
+
+  function playLineAudio(found, charName, onend, epoch){
+    var kind = found.source === "static" ? "synth" : "rec";
+    withGain(found.blob, roleVolume(charName, kind)).then(function(b){
+      if (epoch === playbackEpoch) playBlob(b, onend, epoch);
+    });
   }
 
   /* ---------------- recorded-audio storage (IndexedDB) ---------------- */
@@ -1702,10 +1781,9 @@
     else delete resolvedCache[cueIndex];
   }
 
-  // The pre-baked "recordings/" folder shipped with the deployed site — these
-  // files aren't deletable from the app itself (that would need editing the
-  // repo), unlike a Firestore-backed cloud recording, so a cloud tombstone is
-  // what suppresses them.
+  // The pre-baked "recordings/" folder shipped with the deployed site (the
+  // generated voices). These files aren't deletable from the app; a recorded take
+  // overrides one, and deleting the take brings it back.
   function fetchStaticRecording(cueIndex){
     var missKey = currentScriptId + "::" + cueIndex;
     if (sharedMissCache[missKey]) return Promise.resolve(null);
@@ -1743,13 +1821,13 @@
 
       if (cloud && cloud.deleted){
         // Deleted for everyone. Drop this device's leftover copy of the same (or
-        // older) take, and do not fall back to a pre-baked file for the line.
+        // older) take; the line then goes back to its generated voice, if any.
         if (local && localAt <= cloudAt){
           deleteRecording(cueIndex).catch(function(){ /* ignore */ });
-          return null;
+          local = null;
         }
         if (local) return { blob: local.blob, source: local.cloudSynced === false ? "local-unsynced" : "local", updatedAt: localAt };
-        return null;
+        cloud = null;
       }
 
       if (cloud && cloud.blob && cloudAt > localAt){
@@ -2054,7 +2132,7 @@
         // pre-generated VOICEVOX audio shipped with the site; a real take replaces it
         recordStatusEl.className = "record-status has-audio";
         recordStatusEl.textContent = "🤖 合成音声（タップで試聴・録音すると置き換わります）";
-        recDeleteBtn.disabled = false;
+        recDeleteBtn.disabled = true;
         return;
       }
       recordStatusEl.className = "record-status has-audio";
@@ -2091,7 +2169,7 @@
 
   recDeleteBtn.addEventListener("click", function(){
     var idx = state.idx;
-    if (!confirm("このセリフの録音を削除しますか？（全員の分が消えます）")) return;
+    if (!confirm("このセリフの録音を削除しますか？（全員の分が消え、合成音声に戻ります）")) return;
     setSaveState(idx, null);
     invalidateResolved(idx);
     recordStatusEl.className = "record-status";
@@ -2114,7 +2192,7 @@
     if (!recordStatusEl.classList.contains("has-audio")) return;
     var epoch = newPlaybackEpoch();
     resolveRecording(state.idx).then(function(found){
-      if (found && found.blob) playBlob(found.blob, null, epoch);
+      if (found && found.blob) playLineAudio(found, CUES[state.idx] && CUES[state.idx].character, null, epoch);
     });
   });
 
@@ -2184,7 +2262,7 @@
     var epoch = playbackEpoch;
     resolveRecording(cueIndex).then(function(found){
       if (epoch !== playbackEpoch) return;   // abandoned: a newer epoch owns the flow
-      if (found && found.blob){ playBlob(found.blob, onend, epoch); return; }
+      if (found && found.blob){ playLineAudio(found, cue.character, onend, epoch); return; }
       pauseForLine(cue.text, function(){
         if (epoch === playbackEpoch && onend) onend();
       });
@@ -2384,6 +2462,43 @@
   });
   overlay.addEventListener("click", closeDrawer);
   function closeDrawer(){ drawer.classList.remove("open"); overlay.classList.remove("open"); }
+
+  function renderVolumeList(){
+    var wrap = document.getElementById("volume-list");
+    wrap.innerHTML = "";
+    CHAR_LIST.forEach(function(name){
+      var row = document.createElement("div");
+      row.className = "vol-row";
+      var title = document.createElement("div");
+      title.className = "vol-name";
+      title.textContent = name;
+      if (CHAR_META[name]) title.style.color = CHAR_META[name].color;
+      row.appendChild(title);
+      [["synth","合成音声"],["rec","録音"]].forEach(function(k){
+        var line = document.createElement("label");
+        line.className = "vol-line";
+        var cap = document.createElement("span"); cap.textContent = k[1];
+        var range = document.createElement("input");
+        range.type = "range"; range.min = "0"; range.max = String(VOLUME_MAX * 100); range.step = "10";
+        range.value = String(Math.round(roleVolume(name, k[0]) * 100));
+        range.setAttribute("aria-label", name + "の" + k[1] + "の音量");
+        var out = document.createElement("output"); out.textContent = range.value + "%";
+        range.addEventListener("input", function(){
+          out.textContent = range.value + "%";
+          setRoleVolume(name, k[0], parseInt(range.value, 10) / 100);
+        });
+        line.appendChild(cap); line.appendChild(range); line.appendChild(out);
+        row.appendChild(line);
+      });
+      wrap.appendChild(row);
+    });
+  }
+
+  document.getElementById("volume-reset-btn").addEventListener("click", function(){
+    roleVolumes = {};
+    try { localStorage.removeItem(VOLUME_KEY); } catch (e){ /* private mode */ }
+    renderVolumeList();
+  });
 
   var sfxToggle = document.getElementById("sfx-toggle");
   sfxToggle.checked = sfxOn;
