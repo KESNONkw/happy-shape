@@ -2330,14 +2330,14 @@
      A sound cue ("S") whose text names a known effect plays the matching file
      from sfx/. Matching is by keyword rather than cue index so it also works for
      imported scripts and survives edits to the script. */
-  // 扉が開く and LINE intentionally play each other's sound (swapped on request).
+  // 着信 and LINE intentionally play each other's sound (swapped on request).
   // The keys name the audio files, not the cue they're used for.
   var SFX_RULES = [
     [/チャイム/, "chime"],
-    [/着信/, "ringtone"],
-    [/(扉|ドア)が開/, "line"],
+    [/着信/, "line"],
+    [/(扉|ドア)が開/, "door-open"],
     [/(扉|ドア)が閉/, "door-close"],
-    [/LINE|ライン/i, "door-open"],
+    [/LINE|ライン/i, "ringtone"],
     [/通知音/, "notification"]
   ];
   var sfxOn = true;

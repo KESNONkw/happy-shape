@@ -5,12 +5,12 @@
   ライセンス: https://creativecommons.org/licenses/by/4.0/deed.ja
   利用規約:   https://otologic.jp/free/license.html
   chime.wav     元素材: 「Japanese_School_Bell02-03(Slow-Short)」 by OtoLogic
-  ringtone.wav  元素材: 「Smartphone-Ringtone01-01(Dry)」 by OtoLogic
-  line.wav      元素材: 「Smartphone-UI_Sound03-02(Dry)」 by OtoLogic（「扉が開く音」で使用）
+  ringtone.wav  元素材: 「Smartphone-Ringtone01-01(Dry)」 by OtoLogic（「LINE音」で使用）
+  line.wav      元素材: 「Smartphone-UI_Sound03-02(Dry)」 by OtoLogic（「電話着信音」で使用）
 
 ■ 効果音：効果音ラボ（https://soundeffect-lab.info）
   利用規約: https://soundeffect-lab.info/agreement/
-  LINE音      元素材: 「ドアを開ける1」
+  扉が開く音  元素材: 「ドアを開ける1」
   扉が閉まる音  元素材: 「ドアを閉める2」
   ※効果音ラボの依頼に従い、この2つは音源ファイルとして置かず、アプリのページ内に埋め込んでいます。
     効果音ラボの規約により、これらの音を取り出して再配布・再利用することはできません。
