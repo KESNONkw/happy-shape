@@ -322,6 +322,16 @@
   .vol-line{ display:grid; grid-template-columns:3.6rem 1fr 3rem; align-items:center; gap:.4rem; font-size:.76rem; color:var(--ink-dim); }
   .vol-line input{ width:100%; accent-color:var(--accent); }
   .vol-line output{ font-family:var(--mono); font-variant-numeric:tabular-nums; text-align:right; color:var(--ink); }
+  .hide-btn{ padding:.25rem .7rem; font-size:.78rem; }
+  .hide-btn[hidden]{ display:none; }
+  /* 暗記練習: your own lines become a bar about as long as the line; tap to reveal */
+  #stage.hide-mine .row.line.mine:not(.revealed) .say{
+    display:inline; color:transparent; user-select:none; border-radius:4px;
+    background:color-mix(in srgb, var(--ink-dim) 22%, transparent);
+    -webkit-box-decoration-break:clone; box-decoration-break:clone;
+  }
+  #stage.hide-mine .row.line.mine:not(.revealed) .say .beat{ color:transparent; }
+  #stage.hide-mine .row.line.mine:not(.revealed){ cursor:help; }
   .follow-btn{ padding:.25rem .7rem; font-size:.78rem; border-color:var(--accent); color:var(--accent); font-weight:700; }
   .follow-btn[hidden]{ display:none; }
 
@@ -658,6 +668,7 @@
   <div class="status-line">
     <span class="status-pill" id="status-pill">準備完了</span>
     <button class="btn ghost follow-btn" id="follow-btn" hidden title="自動スクロールを再開して、今読んでいる行へ戻る">▼ 今の行へ</button>
+    <button class="btn ghost hide-btn" id="hide-btn" hidden title="自分のセリフの表示／非表示（暗記練習）">🙈 セリフを隠す</button>
     <span id="progress-label" style="margin-left:auto; font-family:var(--mono); font-variant-numeric:tabular-nums;"></span>
   </div>
   <div class="record-row" id="record-row">
@@ -693,6 +704,11 @@
       <span>効果音を鳴らす</span>
       <input type="checkbox" id="sfx-toggle" checked>
     </div>
+    <div class="toggle-row">
+      <span>自分のセリフを隠す（暗記練習）</span>
+      <input type="checkbox" id="hide-mine-toggle">
+    </div>
+    <p class="hint" style="margin-top:0;">個人練習で、自分の役のセリフを隠します。隠れたセリフはタップすると表示されます。</p>
     <p class="hint">セリフ音声：VOICEVOX:春日部つむぎ、VOICEVOX:冥鳴ひまり、VOICEVOX:白上虎太郎、VOICEVOX:青山龍星、VOICEVOX:九州そら。</p>
     <p class="hint">使用した音素材：OtoLogic（https://otologic.jp、CC BY 4.0）、効果音ラボ／効果音：ポケットサウンド – https://pocket-se.info/。<a href="sfx/CREDITS.txt" target="_blank" rel="noopener">クレジット</a></p>
   </div>
@@ -3387,6 +3403,7 @@
       row.textContent = cue.text;
     } else {
       row.className = "row line";
+      row.dataset.who = cue.character || "";
       var who = document.createElement("div");
       who.className = "who";
       who.style.setProperty("--chip-color", CHAR_META[cue.character] ? CHAR_META[cue.character].color : "inherit");
@@ -3418,7 +3435,49 @@
       appendRow(CUES[i], i);
       setRowState(i, "upcoming");
     }
+    applyHideMine();
   }
+
+  // 暗記練習: in 個人練習 the chosen role's lines can be hidden. A hidden line is
+  // revealed by tapping it (that first tap doesn't jump there); turning hiding
+  // back on covers everything again. The choice is remembered on this device.
+  var hideMine = false;
+  try { hideMine = localStorage.getItem("happyShapeHideMine") === "on"; } catch (e){ /* private mode */ }
+  var hideBtn = document.getElementById("hide-btn");
+  var hideToggle = document.getElementById("hide-mine-toggle");
+  hideToggle.checked = hideMine;
+
+  function applyHideMine(){
+    var solo = state.mode === "solo";
+    Object.keys(rowsByIndex).forEach(function(i){
+      var row = rowsByIndex[i].main;
+      if (row.classList.contains("line")) row.classList.toggle("mine", solo && row.dataset.who === state.myRole);
+    });
+    stageEl.classList.toggle("hide-mine", solo && hideMine);
+    hideBtn.hidden = !solo;
+    hideBtn.textContent = hideMine ? "👁 セリフを表示" : "🙈 セリフを隠す";
+    hideToggle.checked = hideMine;
+  }
+
+  function setHideMine(on){
+    hideMine = on;
+    try { localStorage.setItem("happyShapeHideMine", on ? "on" : "off"); } catch (e){ /* private mode */ }
+    if (on) Array.prototype.forEach.call(stageEl.querySelectorAll(".row.revealed"), function(r){ r.classList.remove("revealed"); });
+    applyHideMine();
+  }
+
+  hideBtn.addEventListener("click", function(){ setHideMine(!hideMine); });
+  hideToggle.addEventListener("change", function(e){ setHideMine(e.target.checked); });
+
+  // Capture phase, so a tap on a hidden line reveals it before the row's own
+  // "read from here" handler can run.
+  stageEl.addEventListener("click", function(e){
+    if (!stageEl.classList.contains("hide-mine")) return;
+    var row = e.target.closest && e.target.closest(".row.line.mine");
+    if (!row || row.classList.contains("revealed")) return;
+    row.classList.add("revealed");
+    e.stopPropagation();
+  }, true);
 
   function setRowState(idx, kind){
     var entry = rowsByIndex[idx];
