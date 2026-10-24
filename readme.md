@@ -27,9 +27,9 @@
 |---|---|---|
 | チャイム `sfx/chime.wav` | Japanese_School_Bell02-03(Slow-Short) | [OtoLogic](https://otologic.jp)（CC BY 4.0） |
 | 電話着信音 `sfx/ringtone.wav` | Smartphone-Ringtone01-01(Dry) | [OtoLogic](https://otologic.jp)（CC BY 4.0） |
-| LINE音 `sfx/line.wav` | Smartphone-UI_Sound03-02(Dry) | [OtoLogic](https://otologic.jp)（CC BY 4.0） |
+| 扉が開く音 `sfx/line.wav` | Smartphone-UI_Sound03-02(Dry) | [OtoLogic](https://otologic.jp)（CC BY 4.0） |
 | スマホの通知音（ページ内に埋め込み） | 通知音04（最初の1回分） | [ポケットサウンド](https://pocket-se.info/) |
-| 扉が開く音（ページ内に埋め込み） | ドアを開ける1 | [効果音ラボ](https://soundeffect-lab.info) |
+| LINE音（ページ内に埋め込み） | ドアを開ける1 | [効果音ラボ](https://soundeffect-lab.info) |
 | 扉が閉まる音（ページ内に埋め込み） | ドアを閉める2 | [効果音ラボ](https://soundeffect-lab.info) |
 
 いずれもアプリでの再生用に加工しています（WAV 変換、無音の調整とフェード、音割れしない範囲での音量調整）。
