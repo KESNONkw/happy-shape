@@ -332,6 +332,7 @@
   }
   #stage.hide-mine .row.line.mine:not(.revealed) .say .beat{ color:transparent; }
   #stage.hide-mine .row.line.mine:not(.revealed){ cursor:help; }
+  #pause-btn.paused{ border-color:var(--accent); color:var(--accent); font-weight:700; }
   .follow-btn{ padding:.25rem .7rem; font-size:.78rem; border-color:var(--accent); color:var(--accent); font-weight:700; }
   .follow-btn[hidden]{ display:none; }
 
@@ -508,6 +509,7 @@
   :root[data-ui="mobile"] .btn{ min-height:3.1rem; }
   :root[data-ui="mobile"] .btn.primary{ min-height:3.6rem; font-size:1.05rem; }
   :root[data-ui="mobile"] #back-btn,
+  :root[data-ui="mobile"] #pause-btn,
   :root[data-ui="mobile"] #restart-btn{ padding:.7rem .75rem; font-size:.8rem; flex:none; }
 
   /* --- settings: a right-hand drawer is a desktop shape; on a phone it
@@ -691,6 +693,7 @@
   <div class="ctrl-row">
     <button class="btn ghost" id="back-btn" title="一つ戻る">◀ 戻る</button>
     <button class="btn primary" id="next-btn">はじめる</button>
+    <button class="btn ghost" id="pause-btn" title="一時停止／再開">⏸ 一時停止</button>
     <button class="btn ghost" id="restart-btn" title="最初から">⟲ 最初から</button>
   </div>
 </footer>
@@ -3100,6 +3103,8 @@
   var nextBtn = document.getElementById("next-btn");
   var backBtn = document.getElementById("back-btn");
   var restartBtn = document.getElementById("restart-btn");
+  var pauseBtn = document.getElementById("pause-btn");
+  var paused = false;
 
   document.getElementById("start-btn").addEventListener("click", function(){
     if (state.mode === "sfx"){
@@ -3317,6 +3322,37 @@
     discardTake(function(){ markRowDone(currentRow); revealNext(); });
   });
 
+  /* ---------------- pause ----------------
+     Stops whatever is playing and every automatic advance (other roles' lines,
+     sound effects, direction skips, 自分の番も自動で進む) by retiring the playback
+     epoch. A take being recorded is left alone. Resuming replays the current line
+     from its start; 次へ / 戻る / tapping a line also carry on from a pause. */
+  function setPaused(on){
+    paused = on;
+    pauseBtn.textContent = on ? "▶ 再開" : "⏸ 一時停止";
+    pauseBtn.classList.toggle("paused", on);
+  }
+
+  function pauseRun(){
+    if (paused || state.idx < 0 || !CUES[state.idx] || document.getElementById("end-card")) return;
+    newPlaybackEpoch();
+    cancelAutoMine();
+    if (currentRow) currentRow.classList.remove("speaking");
+    setPaused(true);
+    setStatus("idle", "一時停止中");
+    nextBtn.disabled = false;
+    backBtn.disabled = state.idx <= 0;
+  }
+
+  function resumeRun(){
+    if (!paused) return;
+    unlockAudio();
+    state.idx--;          // revealNext() steps forward onto the same line and plays it afresh
+    revealNext();
+  }
+
+  pauseBtn.addEventListener("click", function(){ if (paused) resumeRun(); else pauseRun(); });
+
   restartBtn.addEventListener("click", function(){
     cancelSpeech();
     resetLog();
@@ -3327,6 +3363,7 @@
   });
 
   function resetLog(){
+    setPaused(false);
     state.idx = -1; state.voicedLineCount = 0;
     setFollow(true);
     buildStage();
@@ -3633,6 +3670,7 @@
   }
 
   function revealNext(){
+    setPaused(false);
     newPlaybackEpoch();
     markRowDone(currentRow);
     state.idx++;
@@ -3722,6 +3760,7 @@
 
   function goBack(){
     if (state.idx <= 0) return;
+    setPaused(false);
     cancelSpeech();
     setFollow(true);
 
