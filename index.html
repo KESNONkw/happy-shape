@@ -709,6 +709,11 @@
       <input type="checkbox" id="hide-mine-toggle">
     </div>
     <p class="hint" style="margin-top:0;">個人練習で、自分の役のセリフを隠します。隠れたセリフはタップすると表示されます。</p>
+    <div class="toggle-row">
+      <span>自分の番も自動で進む</span>
+      <input type="checkbox" id="auto-mine-toggle">
+    </div>
+    <p class="hint" style="margin-top:0;">個人練習で、自分のセリフも、そのセリフの録音（なければ合成音声）の長さ＋少しの余裕だけ待って自動で次へ進みます。録音を始めたセリフでは自動で進みません。</p>
     <p class="hint">セリフ音声：VOICEVOX:春日部つむぎ、VOICEVOX:冥鳴ひまり、VOICEVOX:白上虎太郎、VOICEVOX:青山龍星、VOICEVOX:九州そら。</p>
     <p class="hint">使用した音素材：OtoLogic（https://otologic.jp、CC BY 4.0）、効果音ラボ／効果音：ポケットサウンド – https://pocket-se.info/。<a href="sfx/CREDITS.txt" target="_blank" rel="noopener">クレジット</a></p>
   </div>
@@ -2015,6 +2020,7 @@
   }
 
   function startRecording(){
+    cancelAutoMine();   // 録音中は自動で進まない
     if (!recordingSupported || !CUES[state.idx]) return;
     if (mediaRecorder && mediaRecorder.state === "recording") return;
     var cueIndex = state.idx;
@@ -3438,6 +3444,78 @@
     applyHideMine();
   }
 
+  // 自動で進む: in 個人練習 your own line can also move on by itself, after as long as
+  // that line's audio lasts (your take if there is one, else the generated voice)
+  // plus a little slack. The audio isn't played; it only sets the timing. Starting
+  // a recording on the line cancels it, and any jump/back/next invalidates the
+  // timer through the playback epoch.
+  var AUTO_MINE_SLACK_MS = 1000;
+  var autoMine = false;
+  try { autoMine = localStorage.getItem("happyShapeAutoMine") === "on"; } catch (e){ /* private mode */ }
+  var autoMineTimer = 0;
+  var autoMineToggle = document.getElementById("auto-mine-toggle");
+  autoMineToggle.checked = autoMine;
+
+  function cancelAutoMine(){
+    if (autoMineTimer){ clearTimeout(autoMineTimer); autoMineTimer = 0; }
+  }
+
+  function blobSeconds(blob){
+    var viaDecode = (OfflineCtx && blob.arrayBuffer) ? decodeBlob(blob).then(function(b){ return b.duration; }) : Promise.reject();
+    return viaDecode.catch(function(){
+      // a codec this browser can't decode: fall back to the media element's own idea
+      return new Promise(function(resolve, reject){
+        var a = new Audio(), url = URL.createObjectURL(blob);
+        a.preload = "metadata";
+        a.onloadedmetadata = function(){ URL.revokeObjectURL(url); isFinite(a.duration) ? resolve(a.duration) : reject(); };
+        a.onerror = function(){ URL.revokeObjectURL(url); reject(); };
+        a.src = url;
+      });
+    });
+  }
+
+  // Roughly how long the line takes to say, for lines with no usable audio.
+  function estimatedSeconds(text){
+    var spoken = stripParentheticals(text || "");
+    return spoken ? 0.5 + spoken.length * 0.13 : 0.7;
+  }
+
+  function lineSeconds(idx){
+    var cue = CUES[idx];
+    return resolveRecording(idx).then(function(found){
+      if (!found || !found.blob) return estimatedSeconds(cue.text);
+      return blobSeconds(found.blob).catch(function(){ return estimatedSeconds(cue.text); });
+    }, function(){ return estimatedSeconds(cue.text); });
+  }
+
+  function scheduleAutoMine(idx){
+    cancelAutoMine();
+    if (!autoMine || state.mode !== "solo") return;
+    var epoch = playbackEpoch;
+    function stillHere(){
+      return state.idx === idx && epoch === playbackEpoch && stageEl.style.display !== "none" &&
+        !(mediaRecorder && mediaRecorder.state === "recording");
+    }
+    lineSeconds(idx).then(function(sec){
+      if (!stillHere()) return;
+      autoMineTimer = setTimeout(function(){
+        autoMineTimer = 0;
+        if (!stillHere()) return;
+        markRowDone(currentRow);
+        revealNext();
+      }, Math.round(sec * 1000) + AUTO_MINE_SLACK_MS);
+    });
+  }
+
+  autoMineToggle.addEventListener("change", function(e){
+    autoMine = e.target.checked;
+    try { localStorage.setItem("happyShapeAutoMine", autoMine ? "on" : "off"); } catch (err){ /* private mode */ }
+    // switched on while already waiting on your line: start counting from now
+    var cue = CUES[state.idx];
+    if (autoMine && cue && currentCueIsUserLine(cue) && stageEl.style.display !== "none") scheduleAutoMine(state.idx);
+    else cancelAutoMine();
+  });
+
   // 暗記練習: in 個人練習 the chosen role's lines can be hidden. A hidden line is
   // revealed by tapping it (that first tap doesn't jump there); turning hiding
   // back on covers everything again. The choice is remembered on this device.
@@ -3584,6 +3662,7 @@
         nextBtn.className = "btn primary wait-you";
         nextBtn.disabled = false; backBtn.disabled = state.idx === 0;
         if (state.mode === "rec") arriveAtRecordedLine(thisIdx);
+        else scheduleAutoMine(thisIdx);
       } else if (sfxUrl){
         currentRow.classList.add("speaking");
         setStatus("speaking","効果音…");
@@ -3676,6 +3755,7 @@
       if (currentRow) currentRow.classList.add("your-turn");
       setStatus("you","あなたの番です");
       nextBtn.textContent = "読み終えたら次へ"; nextBtn.className = "btn primary wait-you";
+      scheduleAutoMine(state.idx);
     } else {
       setStatus("idle","準備完了");
       nextBtn.textContent = "次へ"; nextBtn.className = "btn primary";
