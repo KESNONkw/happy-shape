@@ -215,19 +215,19 @@
   /* ---------- main stage / log ---------- */
   main{ flex:1; overflow-y:auto; padding:1rem 1rem 6.5rem; }
   #stage{
-    max-width:680px; margin:0 auto;
+    max-width:calc(680px * var(--ts, 1)); margin:0 auto;
     background-image:
       repeating-linear-gradient(to bottom, transparent, transparent 27px, color-mix(in srgb, var(--ink) 4%, transparent) 28px);
   }
   .row{ padding:.45rem .2rem; }
   .row.scene-div{
     display:flex; align-items:center; gap:.7rem; margin:1.1rem 0 .5rem; color:var(--ink-dim);
-    font-size:.72rem; letter-spacing:.12em; text-transform:uppercase;
+    font-size:calc(.72rem * var(--ts, 1)); letter-spacing:.12em; text-transform:uppercase;
   }
   .row.scene-div::before, .row.scene-div::after{ content:""; flex:1; height:1px; background:var(--border); }
 
-  .row.direction{ text-align:center; font-size:.82rem; color:var(--ink-dim); font-style:italic; padding:.5rem 1rem; }
-  .row.note{ text-align:center; font-size:.75rem; color:var(--ink-dim); border:1px dashed var(--border); border-radius:8px; padding:.3rem .6rem; margin:.3rem auto; max-width:20rem; }
+  .row.direction{ text-align:center; font-size:calc(.82rem * var(--ts, 1)); color:var(--ink-dim); font-style:italic; padding:.5rem 1rem; }
+  .row.note{ text-align:center; font-size:calc(.75rem * var(--ts, 1)); color:var(--ink-dim); border:1px dashed var(--border); border-radius:8px; padding:.3rem .6rem; margin:.3rem auto; max-width:20rem; }
 
   /* the whole script is on the stage; rows not reached yet are dimmed, and any row can be tapped to read from there */
   .row.upcoming{ opacity:.72; }
@@ -238,10 +238,10 @@
 
   .row.line{ display:flex; gap:.75rem; align-items:flex-start; padding:.55rem .5rem; border-radius:var(--radius); min-width:0; }
   .who{
-    flex:none; width:4.4rem; text-align:right; font-size:.78rem; font-weight:700; padding-top:.15rem;
+    flex:none; width:calc(4.4rem * var(--ts, 1)); text-align:right; font-size:calc(.78rem * var(--ts, 1)); font-weight:700; padding-top:.15rem;
     color:var(--chip-color, var(--ink));
   }
-  .say{ font-family:var(--serif); font-size:1.02rem; line-height:1.85; min-width:0; overflow-wrap:anywhere; }
+  .say{ font-family:var(--serif); font-size:calc(1.02rem * var(--ts, 1)); line-height:1.85; min-width:0; overflow-wrap:anywhere; }
   .say .beat{ color:var(--ink-dim); font-style:italic; font-size:.92em; }
   .row.line.done{ opacity:.55; }
   .row.line.current{ background:var(--surface); border:1px solid var(--border); box-shadow:0 1px 3px color-mix(in srgb, var(--ink) 8%, transparent); }
@@ -436,6 +436,11 @@
   :root[data-ui="mobile"] .hdr-scene select{
     flex:1 1 auto; min-width:0; max-width:none; width:auto; font-size:16px; padding:.5rem .55rem;
   }
+  .zoom-ctrl{ display:flex; align-items:center; gap:.2rem; }
+  .zoom-ctrl .icon-btn{ font-size:.85rem; font-weight:700; width:auto; min-width:2.3rem; padding:0 .5rem; white-space:nowrap; }
+  .zoom-ctrl .icon-btn:disabled{ opacity:.35; cursor:not-allowed; }
+  .zoom-val{ min-width:3.1rem; border:none; background:none; color:var(--ink-dim); font-family:var(--mono); font-size:.75rem; cursor:pointer; padding:0; }
+  :root[data-ui="mobile"] .zoom-ctrl{ display:none; }
   :root[data-ui="mobile"] .icon-btn{ width:2.6rem; height:2.6rem; font-size:1.15rem; }
 
   /* --- scrolling area --- */
@@ -546,6 +551,11 @@
     <button class="icon-btn" id="open-library" title="台本の書庫へ" aria-label="書庫へ">📚</button>
     <label class="visually-hidden" for="scene-jump">場面へ移動</label>
     <select id="scene-jump"></select>
+    <div class="zoom-ctrl" role="group" aria-label="文字の大きさ">
+      <button class="icon-btn" id="zoom-out" title="文字を小さく" aria-label="文字を小さく">A−</button>
+      <button class="zoom-val" id="zoom-reset" title="文字の大きさを100%に戻す">100%</button>
+      <button class="icon-btn" id="zoom-in" title="文字を大きく" aria-label="文字を大きく">A＋</button>
+    </div>
     <button class="icon-btn" id="toggle-ui" title="スマホ表示／PC表示を切り替え" aria-label="表示を切り替え"></button>
     <button class="icon-btn" id="open-settings" title="設定" aria-label="設定">⚙</button>
   </div>
@@ -2547,9 +2557,46 @@
     document.documentElement.setAttribute("data-ui", next);
     try { localStorage.setItem("happyShapeUiMode", next); } catch (e){ /* private mode */ }
     renderUiToggle();
+    applyTextScale();
     if (stageEl.style.display !== "none") scrollToCurrent();
   });
   renderUiToggle();
+
+  /* ---------------- text size (PC layout only) ----------------
+     Scales the script on the rehearsal screen through the --ts custom property.
+     The phone layout has its own sizes and keeps them: there --ts stays 1 and
+     the controls are hidden. The choice is remembered on this device. */
+  var TEXT_SCALES = [0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6, 1.8, 2];
+  var textScale = 1;
+  try { var savedScale = parseFloat(localStorage.getItem("happyShapeTextScale")); if (TEXT_SCALES.indexOf(savedScale) !== -1) textScale = savedScale; } catch (e){ /* private mode */ }
+  var zoomOutBtn = document.getElementById("zoom-out");
+  var zoomInBtn = document.getElementById("zoom-in");
+  var zoomResetBtn = document.getElementById("zoom-reset");
+
+  function applyTextScale(){
+    document.documentElement.style.setProperty("--ts", uiMode() === "desktop" ? String(textScale) : "1");
+    zoomResetBtn.textContent = Math.round(textScale * 100) + "%";
+    zoomOutBtn.disabled = textScale <= TEXT_SCALES[0];
+    zoomInBtn.disabled = textScale >= TEXT_SCALES[TEXT_SCALES.length - 1];
+  }
+
+  function setTextScale(v){
+    textScale = v;
+    try { localStorage.setItem("happyShapeTextScale", String(v)); } catch (e){ /* private mode */ }
+    applyTextScale();
+    if (stageEl.style.display !== "none") scrollToCurrent();   // keep the line being read in view
+  }
+
+  zoomOutBtn.addEventListener("click", function(){
+    var i = TEXT_SCALES.indexOf(textScale);
+    if (i > 0) setTextScale(TEXT_SCALES[i - 1]);
+  });
+  zoomInBtn.addEventListener("click", function(){
+    var i = TEXT_SCALES.indexOf(textScale);
+    if (i < TEXT_SCALES.length - 1) setTextScale(TEXT_SCALES[i + 1]);
+  });
+  zoomResetBtn.addEventListener("click", function(){ setTextScale(1); });
+  applyTextScale();
 
   /* ---------------- voice settings drawer ---------------- */
   var drawer = document.getElementById("drawer");
