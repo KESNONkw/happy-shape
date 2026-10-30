@@ -587,7 +587,11 @@
     </div>
 
     <div id="import-review" style="display:none;">
-      <p class="lead">解析結果です。誤って認識された行があれば、種別やキャラ名を直接修正してください。</p>
+      <p class="lead" id="review-lead">解析結果です。誤って認識された行があれば、種別やキャラ名を直接修正してください。</p>
+      <div id="edit-name-wrap" style="display:none;">
+        <label class="hint" for="edit-name-input" style="display:block;margin-bottom:.3rem;">新しい台本の名前（元の台本はそのまま残ります）</label>
+        <input type="text" id="edit-name-input" class="import-input">
+      </div>
       <datalist id="review-char-datalist"></datalist>
       <div id="review-rows" class="review-rows"></div>
       <button class="btn ghost" id="review-add-row-btn" style="width:100%;margin:.6rem 0;">＋ 行を追加</button>
@@ -1318,6 +1322,8 @@
   // script-library screen lets a user open a different saved script).
   function loadScript(record){
     currentScriptId = record.id;
+    currentAudioFrom = record.audioFrom || {};
+    invalidateResolved();   // the cache is keyed by cue index alone, so it belongs to one script
     SCENES = record.scenes;
     CHAR_META = record.charMeta;
     CHAR_LIST = record.charList;
@@ -1479,6 +1485,11 @@
   // The id carries the script revision: recordings are keyed by cue index, so a
   // rewritten script needs a fresh id or old takes would play on the wrong lines.
   var currentScriptId = "hakoi-kata-1023";
+  // For a script saved from the editor: cueIndex -> [[scriptId, cueIndex], ...],
+  // the same unchanged line in the script it was edited from (then that one's own
+  // source, and so on). A line with no take of its own plays the first of these
+  // that has audio, so editing a script never loses the voices it already had.
+  var currentAudioFrom = {};
   var BUILTIN_SCRIPT_META = { id:"hakoi-kata-1023", name:"「幸せのカタチ」10/23版", builtin:true };
 
   function recordingKey(scriptId, cueIndex){ return scriptId + "::" + cueIndex; }
@@ -1696,6 +1707,83 @@
     }).catch(function(){ /* best effort: the local copy is removed regardless */ });
   }
 
+  /* ---------------- shared scripts ----------------
+     A saved script is shared with everyone through the same Firestore collection
+     as the recordings (its rules require an `audio` field, so each document
+     carries an empty one, like a recording's metadata document). The script
+     itself is one JSON document; the list everyone's library shows is a single
+     index document with one map entry per script. Each save patches only its own
+     entry (updateMask), so two people saving at once never overwrite each other. */
+  var SCRIPT_INDEX_DOC = "_script_index";
+  function scriptDocId(scriptId){ return "_script_" + scriptId; }
+
+  function writeScriptIndexEntry(record, deleted){
+    var url = FIRESTORE_RECORDINGS_URL + "/" + SCRIPT_INDEX_DOC + "?key=" + FIREBASE_API_KEY
+      + "&updateMask.fieldPaths=audio&updateMask.fieldPaths=" + encodeURIComponent("scripts." + record.id);
+    var entry = { fields: {
+      name: { stringValue: record.name },
+      scenes: { integerValue: String((record.scenes || []).length) },
+      chars: { integerValue: String((record.charList || []).length) },
+      createdAt: { integerValue: String(record.createdAt || 0) },
+      updatedAt: { integerValue: String(Date.now()) },
+      deleted: { booleanValue: !!deleted }
+    } };
+    var fields = { audio: { stringValue: "" }, scripts: { mapValue: { fields: {} } } };
+    fields.scripts.mapValue.fields[record.id] = { mapValue: entry };
+    return fetch(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: fields })
+    }).then(function(res){ if (!res.ok) throw codedError("http-" + res.status); });
+  }
+
+  function shareScript(record){
+    var data = {
+      id: record.id, name: record.name, createdAt: record.createdAt, updatedAt: record.updatedAt,
+      scenes: record.scenes, charMeta: record.charMeta, charList: record.charList,
+      basedOn: record.basedOn || null, audioFrom: record.audioFrom || null
+    };
+    return writeCloudDoc(scriptDocId(record.id), {
+      audio: { stringValue: "" },
+      data: { stringValue: JSON.stringify(data) },
+      updatedAt: { integerValue: String(record.updatedAt || Date.now()) }
+    }).then(function(){ return writeScriptIndexEntry(record, false); });
+  }
+
+  function unshareScript(record){ return writeScriptIndexEntry(record, true); }
+
+  // -> [{id, name, sceneCount, charCount, createdAt}] of every script shared and
+  // not deleted, or null when nothing has been shared yet
+  function fetchSharedScriptList(){
+    return readCloudDoc(SCRIPT_INDEX_DOC).then(function(doc){
+      if (!doc) return null;
+      var map = doc && doc.fields && doc.fields.scripts && doc.fields.scripts.mapValue;
+      var entries = (map && map.fields) || {};
+      return Object.keys(entries).map(function(id){
+        var f = (entries[id].mapValue && entries[id].mapValue.fields) || {};
+        return {
+          id: id,
+          name: (f.name && f.name.stringValue) || "無題の台本",
+          sceneCount: numField(f, "scenes") || 0,
+          charCount: numField(f, "chars") || 0,
+          createdAt: numField(f, "createdAt") || 0,
+          deleted: !!(f.deleted && f.deleted.booleanValue)
+        };
+      }).filter(function(e){ return !e.deleted; });
+    });
+  }
+
+  function fetchSharedScript(scriptId){
+    return readCloudDoc(scriptDocId(scriptId), 20000).then(function(doc){
+      var raw = doc && doc.fields && doc.fields.data && doc.fields.data.stringValue;
+      if (!raw) throw codedError("not-found");
+      var data = JSON.parse(raw);
+      data.builtin = false;
+      data.shared = true;
+      return data;
+    });
+  }
+
   function getDB(){
     if (dbPromise) return dbPromise;
     dbPromise = new Promise(function(resolve, reject){
@@ -1786,22 +1874,22 @@
     });
   }
 
-  function loadRecording(cueIndex){
+  function loadRecording(cueIndex, scriptId){
     return getDB().then(function(db){
       return new Promise(function(resolve, reject){
         var tx = db.transaction("recordings","readonly");
-        var req = tx.objectStore("recordings").get(recordingKey(currentScriptId, cueIndex));
+        var req = tx.objectStore("recordings").get(recordingKey(scriptId || currentScriptId, cueIndex));
         req.onsuccess = function(){ resolve(req.result || null); };
         req.onerror = function(){ reject(req.error); };
       });
     });
   }
 
-  function deleteRecording(cueIndex){
+  function deleteRecording(cueIndex, scriptId){
     return getDB().then(function(db){
       return new Promise(function(resolve, reject){
         var tx = db.transaction("recordings","readwrite");
-        tx.objectStore("recordings").delete(recordingKey(currentScriptId, cueIndex));
+        tx.objectStore("recordings").delete(recordingKey(scriptId || currentScriptId, cueIndex));
         tx.oncomplete = function(){ resolve(); };
         tx.onerror = function(){ reject(tx.error); };
       });
@@ -1854,8 +1942,9 @@
   // The pre-baked "recordings/" folder shipped with the deployed site (the
   // generated voices). These files aren't deletable from the app; a recorded take
   // overrides one, and deleting the take brings it back.
-  function fetchStaticRecording(cueIndex){
-    var missKey = currentScriptId + "::" + cueIndex;
+  function fetchStaticRecording(cueIndex, scriptId){
+    scriptId = scriptId || currentScriptId;
+    var missKey = scriptId + "::" + cueIndex;
     if (sharedMissCache[missKey]) return Promise.resolve(null);
     // probe all known extensions in parallel — one round-trip, not up to five in
     // a row. Each probe is aborted after 2.5s so a stalled/slow network (common
@@ -1863,7 +1952,7 @@
     var attempts = SHARED_EXTS.map(function(ext){
       var controller = new AbortController();
       var timer = setTimeout(function(){ controller.abort(); }, 2500);
-      return fetch("recordings/" + currentScriptId + "/" + cueIndex + "." + ext, { signal: controller.signal }).then(
+      return fetch("recordings/" + scriptId + "/" + cueIndex + "." + ext, { signal: controller.signal }).then(
         function(res){
           clearTimeout(timer);
           if (res && res.ok) return res.blob();
@@ -1880,9 +1969,25 @@
 
   function resolveRecording(cueIndex){
     if (resolvedCache[cueIndex]) return resolvedCache[cueIndex];
-    var scriptIdAtCall = currentScriptId;
-    var pr = Promise.all([
-      loadRecording(cueIndex).catch(function(){ return null; }),
+    var sources = currentAudioFrom[cueIndex] || [];
+    // This script's own take first; failing that, the same line in the script(s)
+    // it was edited from, nearest first.
+    var pr = sources.reduce(function(chain, src){
+      return chain.then(function(found){
+        if (found) return found;
+        return resolveTake(src[0], src[1]).then(function(f){
+          if (f) f.inherited = true;
+          return f;
+        });
+      });
+    }, resolveTake(currentScriptId, cueIndex)).catch(function(){ return null; });
+    resolvedCache[cueIndex] = pr;
+    return pr;
+  }
+
+  function resolveTake(scriptIdAtCall, cueIndex){
+    return Promise.all([
+      loadRecording(cueIndex, scriptIdAtCall).catch(function(){ return null; }),
       fetchCloudDoc(scriptIdAtCall, cueIndex).catch(function(){ return null; })
     ]).then(function(pair){
       var local = pair[0], cloud = pair[1];
@@ -1893,7 +1998,7 @@
         // Deleted for everyone. Drop this device's leftover copy of the same (or
         // older) take; the line then goes back to its generated voice, if any.
         if (local && localAt <= cloudAt){
-          deleteRecording(cueIndex).catch(function(){ /* ignore */ });
+          deleteRecording(cueIndex, scriptIdAtCall).catch(function(){ /* ignore */ });
           local = null;
         }
         if (local) return { blob: local.blob, source: local.cloudSynced === false ? "local-unsynced" : "local", updatedAt: localAt };
@@ -1902,7 +2007,7 @@
 
       if (cloud && cloud.blob && cloudAt > localAt){
         // A newer take by someone else supersedes whatever this device kept.
-        if (local) deleteRecording(cueIndex).catch(function(){ /* ignore */ });
+        if (local) deleteRecording(cueIndex, scriptIdAtCall).catch(function(){ /* ignore */ });
         return { blob: cloud.blob, source: "cloud", updatedAt: cloudAt };
       }
       if (local && local.blob){
@@ -1911,12 +2016,10 @@
       if (cloud && cloud.blob){
         return { blob: cloud.blob, source: "cloud", updatedAt: cloudAt };
       }
-      return fetchStaticRecording(cueIndex).then(function(b){
+      return fetchStaticRecording(cueIndex, scriptIdAtCall).then(function(b){
         return b ? { blob: b, source: "static", updatedAt: 0 } : null;
       });
     }).catch(function(){ return null; });
-    resolvedCache[cueIndex] = pr;
-    return pr;
   }
 
   /* ---------------- microphone recording ---------------- */
@@ -2211,6 +2314,14 @@
       if (!found){
         recordStatusEl.className = "record-status";
         recordStatusEl.textContent = "未録音";
+        return;
+      }
+      if (found.inherited){
+        // the unchanged line's voice from the script this one was edited from
+        recordStatusEl.className = "record-status has-audio";
+        recordStatusEl.textContent = (found.source === "static" ? "🤖 修正前の台本の合成音声" : "📄 修正前の台本の録音")
+          + "（タップで試聴・録音すると置き換わります）";
+        recDeleteBtn.disabled = true;
         return;
       }
       if (found.source === "local-unsynced"){
@@ -2704,18 +2815,34 @@
   }
 
   function scriptCountLabel(record){
+    if (record.sharedOnly) return record.sceneCount + "場面・" + record.charCount + "役・共有";
     var scenes = record.builtin ? BUILTIN_SCENES.length : (record.scenes || []).length;
     var chars = record.builtin ? BUILTIN_CHAR_LIST.length : (record.charList || []).length;
-    return scenes + "場面・" + chars + "役";
+    return scenes + "場面・" + chars + "役" + (record.shared ? "・共有" : "");
+  }
+
+  // A library card's record -> the full script. A shared script this device has
+  // never opened is fetched once and then kept locally (scripts are never
+  // changed in place — editing saves a new one — so the copy can't go stale).
+  function getScriptData(record){
+    if (record.builtin){
+      return Promise.resolve({ id: record.id, name: record.name, scenes: BUILTIN_SCENES, charMeta: BUILTIN_CHAR_META, charList: BUILTIN_CHAR_LIST });
+    }
+    if (record.sharedOnly){
+      return fetchSharedScript(record.id).then(function(data){
+        return saveScriptRecord(data).catch(function(){ return data; });
+      });
+    }
+    return Promise.resolve(record);
   }
 
   function openScript(record){
-    if (record.builtin){
-      loadScript({ id: record.id, name: record.name, scenes: BUILTIN_SCENES, charMeta: BUILTIN_CHAR_META, charList: BUILTIN_CHAR_LIST });
-    } else {
-      loadScript({ id: record.id, name: record.name, scenes: record.scenes, charMeta: record.charMeta, charList: record.charList });
-    }
-    showScreen("setup");
+    getScriptData(record).then(function(data){
+      loadScript({ id: data.id, name: data.name, scenes: data.scenes, charMeta: data.charMeta, charList: data.charList, audioFrom: data.audioFrom });
+      showScreen("setup");
+    }).catch(function(){
+      alert("台本を読み込めませんでした。通信状況を確認して、もう一度お試しください。");
+    });
   }
 
   function appendScriptCard(record){
@@ -2737,29 +2864,76 @@
     openBtn.addEventListener("click", function(){ openScript(record); });
     actions.appendChild(openBtn);
 
+    var editBtn = document.createElement("button");
+    editBtn.type = "button"; editBtn.className = "btn ghost"; editBtn.textContent = "修正";
+    editBtn.addEventListener("click", function(){
+      getScriptData(record).then(startEditScript).catch(function(){
+        alert("台本を読み込めませんでした。通信状況を確認して、もう一度お試しください。");
+      });
+    });
+    actions.appendChild(editBtn);
+
     if (!record.builtin){
       var delBtn = document.createElement("button");
       delBtn.type = "button"; delBtn.className = "btn ghost"; delBtn.textContent = "削除";
       delBtn.addEventListener("click", function(){
-        if (!confirm("「" + record.name + "」を削除しますか？この台本の録音データも削除されます。")) return;
-        deleteScriptAndRecordings(record.id).then(renderLibrary);
+        var shared = record.shared || record.sharedOnly;
+        var msg = shared
+          ? "「" + record.name + "」を削除しますか？全員の台本一覧から消えます。"
+          : "「" + record.name + "」を削除しますか？この台本の録音データも削除されます。";
+        if (!confirm(msg)) return;
+        (shared ? unshareScript(record) : Promise.resolve()).then(function(){
+          return deleteScriptAndRecordings(record.id).catch(function(){ /* not on this device */ });
+        }).then(renderLibrary, function(){
+          alert("削除できませんでした。通信状況を確認して、もう一度お試しください。");
+        });
       });
       actions.appendChild(delBtn);
     }
 
     card.appendChild(info); card.appendChild(actions);
     scriptListEl.appendChild(card);
+    return card;
   }
 
   // The builtin script is rendered immediately, independent of IndexedDB —
   // some viewer contexts (e.g. sandboxed iframes) block IndexedDB entirely,
   // and the library must never appear empty just because that lookup failed.
+  // Scripts on this device follow, then the shared list fills in the rest once
+  // it arrives (and drops any shared script someone has since deleted).
+  var libraryRenderToken = 0;
   function renderLibrary(){
+    var token = ++libraryRenderToken;
     scriptListEl.innerHTML = "";
     appendScriptCard(BUILTIN_SCRIPT_META);
-    return getAllScripts().then(function(records){
-      records.filter(function(r){ return !r.builtin; }).forEach(appendScriptCard);
-    }).catch(function(){ /* custom scripts unavailable; builtin card above still works */ });
+    var localPr = getAllScripts().then(function(records){
+      return records.filter(function(r){ return !r.builtin; });
+    }).catch(function(){ return []; });
+    var cards = {};
+    return localPr.then(function(locals){
+      if (token !== libraryRenderToken) return;
+      locals.sort(function(a, b){ return (a.createdAt || 0) - (b.createdAt || 0); });
+      locals.forEach(function(r){
+        cards[r.id] = appendScriptCard(r);
+        // saved while offline: share it now
+        if (r.shared === false) shareScript(r).then(function(){ r.shared = true; return saveScriptRecord(r); }).catch(function(){ /* next time */ });
+      });
+      return fetchSharedScriptList().then(function(list){
+        if (token !== libraryRenderToken || !list) return;
+        var listed = {};
+        list.sort(function(a, b){ return a.createdAt - b.createdAt; });
+        list.forEach(function(e){
+          listed[e.id] = true;
+          if (!cards[e.id]){ e.sharedOnly = true; cards[e.id] = appendScriptCard(e); }
+        });
+        locals.forEach(function(r){
+          if (r.shared === true && !listed[r.id]){
+            scriptListEl.removeChild(cards[r.id]);
+            deleteScriptAndRecordings(r.id).catch(function(){ /* ignore */ });
+          }
+        });
+      }, function(){ /* offline: this device's scripts are still listed */ });
+    });
   }
 
   document.getElementById("open-library").addEventListener("click", function(){
@@ -2958,6 +3132,80 @@
     document.getElementById("import-review").style.display = name === "review" ? "block" : "none";
   }
 
+  /* ---------------- editing a saved script ----------------
+     Editing reuses the review table, pre-filled with the script, and always saves
+     a new script under a new name; the original is left as it was. */
+  var editSource = null;   // the script being edited, while the review table is in edit mode
+
+  function scenesToFlatCues(scenes){
+    var flat = [];
+    scenes.forEach(function(scene){
+      flat.push({ type:"SCENE_HEADER", text:scene.title });
+      scene.cues.forEach(function(c){ flat.push({ type:c[0], character:c[1], text:c[2] }); });
+    });
+    return flat;
+  }
+
+  function setReviewEditMode(source){
+    editSource = source;
+    document.getElementById("edit-name-wrap").style.display = source ? "" : "none";
+    document.getElementById("review-lead").textContent = source
+      ? "台本を修正して、新しい名前で保存します。変わっていないセリフの音声はそのまま使われます。"
+      : "解析結果です。誤って認識された行があれば、種別やキャラ名を直接修正してください。";
+    document.getElementById("review-back-btn").textContent = source ? "書庫へ戻る" : "貼り付けに戻る";
+    document.getElementById("review-save-btn").textContent = source ? "新しい名前で保存" : "この台本を保存";
+  }
+
+  function startEditScript(data){
+    var d = new Date();
+    document.getElementById("edit-name-input").value = data.name + "（" + (d.getMonth() + 1) + "/" + d.getDate() + "修正）";
+    setReviewEditMode(data);
+    reviewRows = buildReviewRows(scenesToFlatCues(data.scenes));
+    renderReviewTable();
+    showImportSubview("review");
+    showScreen("import");
+    window.scrollTo(0, 0);
+  }
+
+  // For each line of the edited script whose role and words are unchanged, where
+  // that line's audio can be found: the same line in the source script first,
+  // then wherever the source itself took that line from. Lines are paired by a
+  // longest-common-subsequence over (role, words), so inserting, deleting or
+  // rewording lines elsewhere doesn't shift which audio goes with which line.
+  function buildAudioFrom(source, newFlatCues){
+    function lines(flat){
+      var out = [];
+      var cueIndex = 0;
+      flat.forEach(function(c){
+        if (c.type === "SCENE_HEADER") return;
+        if (c.type === "L") out.push({ cueIndex: cueIndex, key: c.character + "\n" + c.text.trim() });
+        cueIndex++;
+      });
+      return out;
+    }
+    var a = lines(scenesToFlatCues(source.scenes)), b = lines(newFlatCues);
+    var n = a.length, m = b.length, w = m + 1;
+    var dp = new Uint32Array((n + 1) * w);
+    for (var i = n - 1; i >= 0; i--){
+      for (var j = m - 1; j >= 0; j--){
+        dp[i * w + j] = a[i].key === b[j].key
+          ? dp[(i + 1) * w + j + 1] + 1
+          : Math.max(dp[(i + 1) * w + j], dp[i * w + j + 1]);
+      }
+    }
+    var srcFrom = source.audioFrom || {};
+    var map = {};
+    i = 0; j = 0;
+    while (i < n && j < m){
+      if (a[i].key === b[j].key){
+        map[b[j].cueIndex] = [[source.id, a[i].cueIndex]].concat(srcFrom[a[i].cueIndex] || []);
+        i++; j++;
+      } else if (dp[(i + 1) * w + j] >= dp[i * w + j + 1]) i++;
+      else j++;
+    }
+    return map;
+  }
+
   /* ---------------- review/correction table ---------------- */
   var reviewRows = null; // array of {isScene:true, title} | {isScene:false, type, character, text}
 
@@ -3087,6 +3335,7 @@
     }
 
     reviewRows = buildReviewRows(flatCues);
+    setReviewEditMode(null);
     renderReviewTable();
     showImportSubview("review");
   });
@@ -3097,6 +3346,14 @@
   });
 
   document.getElementById("review-back-btn").addEventListener("click", function(){
+    if (editSource){
+      if (!confirm("修正内容を保存せずに書庫へ戻りますか？")) return;
+      setReviewEditMode(null);
+      reviewRows = null;
+      showImportSubview("paste");
+      showScreen("library");
+      return;
+    }
     showImportSubview("paste");
   });
 
@@ -3111,32 +3368,56 @@
       errorEl.style.display = "block";
       return;
     }
-    var grouped = groupCuesIntoScenes(reviewRowsToFlatCues(reviewRows));
+    var flatCues = reviewRowsToFlatCues(reviewRows);
+    var grouped = groupCuesIntoScenes(flatCues);
     if (!grouped.charList.length){
       errorEl.textContent = "セリフ（L）の行が1つもありません。少なくとも1つはセリフ行にしてください。";
       errorEl.style.display = "block";
       return;
     }
 
+    var source = editSource;
+    var name = source ? document.getElementById("edit-name-input").value.trim() : (nameInputEl.value.trim() || "無題の台本");
+    if (source && !name){
+      errorEl.textContent = "新しい台本の名前を入れてください。";
+      errorEl.style.display = "block";
+      return;
+    }
+    if (source){
+      // roles that were already in the script keep their colours
+      grouped.charList.forEach(function(c){
+        if (source.charMeta && source.charMeta[c]) grouped.charMeta[c] = source.charMeta[c];
+      });
+    }
+
     var now = Date.now();
     var record = {
       id: makeScriptId(),
-      name: nameInputEl.value.trim() || "無題の台本",
+      name: name,
       builtin: false,
       createdAt: now,
       updatedAt: now,
       scenes: grouped.scenes,
       charMeta: grouped.charMeta,
-      charList: grouped.charList
+      charList: grouped.charList,
+      basedOn: source ? source.id : null,
+      audioFrom: source ? buildAudioFrom(source, flatCues) : null,
+      shared: false
     };
 
     saveScriptRecord(record).then(function(){
       textareaEl.value = "";
       nameInputEl.value = "";
       reviewRows = null;
+      setReviewEditMode(null);
       showImportSubview("paste");
       openScript(record);
-      renderLibrary();
+      shareScript(record).then(function(){
+        record.shared = true;
+        return saveScriptRecord(record);
+      }).catch(function(){
+        alert("台本はこの端末に保存しましたが、全員への共有はまだできていません。通信できるときに書庫を開くと、もう一度共有を試みます。");
+      });
     }).catch(function(){
       errorEl.textContent = "台本の保存に失敗しました。もう一度お試しください。";
       errorEl.style.display = "block";
