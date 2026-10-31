@@ -266,6 +266,10 @@
   .say{ font-family:var(--serif); font-size:calc(1.02rem * var(--ts, 1)); line-height:1.85; min-width:0; overflow-wrap:anywhere; }
   .say .beat{ color:var(--ink-dim); font-style:italic; font-size:.92em; }
   .row.line.done{ opacity:.55; }
+  /* 人の声の録音がないセリフ（個人練習・まとめて録音） */
+  .row.line.no-voice .say{ background:color-mix(in srgb, var(--danger) 13%, transparent); border-radius:6px; box-shadow:0 0 0 .2rem color-mix(in srgb, var(--danger) 13%, transparent); }
+  .row.line.no-voice .who::after{ content:"未録音"; display:block; margin-top:.15rem; font-size:.6rem; font-weight:700; letter-spacing:.05em; color:var(--danger); }
+  .novoice-count{ font-size:.72rem; font-weight:700; color:var(--danger); border:1px solid color-mix(in srgb, var(--danger) 45%, transparent); background:color-mix(in srgb, var(--danger) 10%, transparent); border-radius:999px; padding:.15rem .55rem; white-space:nowrap; }
   .row.line.current{ background:var(--surface); border:1px solid var(--border); box-shadow:0 1px 3px color-mix(in srgb, var(--ink) 8%, transparent); }
   .row.line.current.speaking{ border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset; }
   .row.line.current.your-turn{ border-color:var(--accent-2); box-shadow:0 0 0 1px var(--accent-2) inset; }
@@ -663,7 +667,7 @@
   </section>
 
   <section id="setup" style="display:none;">
-    <p class="lead">台本の全セリフを読み込み済みです。<strong>個人練習</strong>では自分の役以外を、<strong>欠席者の代役</strong>では休んでいる役だけを、システムが声で読み上げます。<strong>まとめて録音</strong>では選んだ役のセリフを録音でき、<strong>効果音の練習</strong>では効果音だけを順番に鳴らせます。</p>
+    <p class="lead">台本の全セリフを読み込み済みです。<strong>個人練習</strong>では自分の役以外を、<strong>欠席者の代役</strong>では休んでいる役だけを、システムが声で読み上げます。<strong>まとめて録音</strong>では選んだ役のセリフを録音でき、<strong>効果音の練習</strong>では効果音だけを順番に鳴らせます。個人練習とまとめて録音では、人の声の録音がまだないセリフが赤く表示されます。</p>
 
     <fieldset>
       <legend>モードを選ぶ</legend>
@@ -701,7 +705,7 @@
     <fieldset id="rec-fields" style="display:none;">
       <legend>録音する役を選ぶ（複数可）</legend>
       <div class="role-grid" id="rec-role-grid"></div>
-      <p class="hint">選んだ役のセリフで止まって録音します。ほかの役のセリフと効果音は個人練習と同じように流れます。何人かで1台を囲んで録るときは、全員の役を選んでください。「……」だけのセリフは録音せずに進みます。</p>
+      <p class="hint">選んだ役のセリフで止まって録音します。ほかの役のセリフと効果音は個人練習と同じように流れます。何人かで1台を囲んで録るときは、全員の役を選んでください。「……」だけのセリフは録音せずに進みます。人の声の録音がまだないセリフは<b style="color:var(--danger)">赤く</b>表示され、録音すると消えます。</p>
     </fieldset>
 
     <fieldset id="missing-fields" style="display:none;">
@@ -761,6 +765,7 @@
   <div class="status-line">
     <span class="status-pill" id="status-pill">準備完了</span>
     <button class="btn ghost follow-btn" id="follow-btn" hidden title="自動スクロールを再開して、今読んでいる行へ戻る">▼ 今の行へ</button>
+    <span class="novoice-count" id="novoice-count" hidden title="人の声の録音がないセリフの数（赤く表示）。録音すると消えます"></span>
     <button class="btn ghost hide-btn" id="hide-btn" hidden title="自分のセリフの表示／非表示（暗記練習）">🙈 セリフを隠す</button>
     <span id="progress-label" style="margin-left:auto; font-family:var(--mono); font-variant-numeric:tabular-nums;"></span>
   </div>
@@ -1381,6 +1386,382 @@
   };
   var BUILTIN_CHAR_LIST = ["知恵","学","永遠","父","母"];
 
+  // 10/31版: the rewrite in 脚本更新/幸せのカタチ　修正版２稿（誤字修正済）.docx.
+  // Lines whose role and spoken words are unchanged from 10/23版 (punctuation and
+  // （ト書き） aside) borrow that line's audio through BUILTIN_1031_AUDIO_FROM.
+  var BUILTIN_1031_SCENES = [
+  { title:"♯１ とある日の夕暮れ", cues:[
+    ["D",null,"セットは真ん中で分けられた二部屋と前通路。前通路にはベンチが置いてある。下手側は知恵の家、上手側は永遠のバイト（コンビニ）。前の通路は外のシーンとして使用する。"],
+    ["S",null,"大学のチャイム音FI"],
+    ["D",null,"しばらくして、前通路に永遠、下手から入り。"],
+    ["L","永遠","…"],
+    ["D",null,"しばらくして、前通路に知恵入り。"],
+    ["L","知恵","永遠～！"],
+    ["L","永遠","あ、知恵！お疲れ。"],
+    ["L","知恵","講義、マジで眠かったんだけど～"],
+    ["L","永遠","ちゃんと受けなよ？じゃないと卒業できなくなるよ"],
+    ["L","知恵","わかってるよ、もう単位は落としません"],
+    ["L","永遠","去年もそれ言ってなかった？"],
+    ["L","知恵","大丈夫！今年は本気だから"],
+    ["L","永遠","もう…"],
+    ["L","知恵","これから何すんの？"],
+    ["L","永遠","この後バイト"],
+    ["L","知恵","え！バイトしてるの！？何のバイト？"],
+    ["L","永遠","コンビニ。大学の向かいにロソーンあるでしょ"],
+    ["L","知恵","あ、あそこなんだ！"],
+    ["L","永遠","うん"],
+    ["L","知恵","いいなぁ…私もバイトしたいな"],
+    ["L","永遠","あれ？居酒屋でバイトしてなかった？"],
+    ["L","知恵","あ！それね！めっちゃ前に辞めた！"],
+    ["L","永遠","なんで？結構楽しそうだったじゃん"],
+    ["L","知恵","店長もママもうざくてさ～"],
+    ["L","永遠","お母さん？"],
+    ["L","知恵","夜遅くなるとめっちゃ電話来るの、そのせいで店長にも怒られるし"],
+    ["L","永遠","そうなんだ…"],
+    ["L","知恵","コンビニも夜遅いでしょ？何にも言われないの？"],
+    ["L","永遠","私は特に何も言われないかな、お母さんも家にいないし"],
+    ["L","知恵","え、うらやましい！私も永遠のママみたいなママが良かった！"],
+    ["L","永遠","あはは…　この後の予定は？"],
+    ["L","知恵","私？することないし家帰るかな～でも、家帰っても弟いるから気まずいんだよね"],
+    ["L","永遠","学君だっけ？昔はよく一緒に遊んでたじゃん"],
+    ["L","知恵","昔はね（笑）最近なんてほぼ口きいてない"],
+    ["L","永遠","なんで？喧嘩したとか？"],
+    ["L","知恵","別にそういうわけじゃないけど、特に話すこともないし　あと、あいつ今学校行ってなくてさ。ずっと家でゲームやってる"],
+    ["L","永遠","えっ？そうなの？"],
+    ["L","知恵","なんか友達ともめた？みたいでそれからまるっきり行ってない"],
+    ["L","永遠","いじめられたりしたのかな？"],
+    ["L","知恵","まああいつの心が弱いだけだよ、ちょっとからかわれたくらいでピーピー泣いてさ"],
+    ["L","永遠","そんないい方しなくても…"],
+    ["L","知恵","私だって大学行きたくないけど頑張ってるのにあいつはゲームばっかりやって本当にうらやましい。私も学みたいに好きなことだけやって生きていきたいなぁ…"],
+    ["S",null,"電話着信音FI。"],
+    ["L","永遠","あ、ごめん。店長だ！"],
+    ["L","知恵","ごめん、引き止めちゃって"],
+    ["L","永遠","うん、じゃあね。あ、もしもしお疲れさまです。30分早くですか？大丈夫です。"],
+    ["D",null,"永遠、上手に走ってはける。知恵、誰かに電話をかけて話しながらはけていく。照明変化。"]
+  ]},
+  { title:"♯２ 普段の知恵家", cues:[
+    ["D",null,"照明変化。母は下手板付き。しばらくして父、下手入り。"],
+    ["L","父","ただいま"],
+    ["L","母","おかえりなさい、ごはんできてるよ"],
+    ["L","父","ああ"],
+    ["L","母","学！ご飯できたよ！"],
+    ["L","学","……"],
+    ["L","母","まったく…今日もまだ何もご飯食べてないのよ"],
+    ["L","父","そうか…"],
+    ["L","母","もう学校も休み始めてから今日で２か月…せめて一食くらいは一緒に食べたいんだけど"],
+    ["L","父","…まぁ、学も学なりに進んでいると思うぞ"],
+    ["L","母","またのんきなこといって。どうにかしようと思わないわけ？"],
+    ["L","父","そんなこと言われてもなぁ…"],
+    ["L","母","（クソでか溜息）。（上手に向かって）学、学！"],
+    ["L","学","（無視）"],
+    ["L","母","ご飯できたよ"],
+    ["L","学","（無視）"],
+    ["L","母","朝から何も食べてないじゃない"],
+    ["L","学","（無視）"],
+    ["L","母","なにか一口でも食べてくれない？"],
+    ["S",null,"扉が開く音、FI。"],
+    ["L","学","（舞台裏から）今ゲームしてるから、ほっといてよ！"],
+    ["S",null,"扉が閉まる音、FI"],
+    ["L","母","学！まったく…"],
+    ["L","父","腹が減ったらそのうち食べるさ"],
+    ["L","母","そんな無責任なこと言ってないであなたからもなんか言ってちょうだい"],
+    ["L","父","……"],
+    ["L","母","（くそでか溜息）もういい"],
+    ["L","父","……知恵はまだ帰ってきてないのか？"],
+    ["L","母","今更気づいたの？あの子、最近ずっと帰りも遅いのよ"],
+    ["L","父","大学生だしな"],
+    ["L","母","心配じゃないの？"],
+    ["L","父","心配はしてるさ"],
+    ["L","母","どうだか。知ってる？あの子もうすぐ公務員試験模試あるのよ"],
+    ["L","父","あー、もうそんな時期か"],
+    ["L","母","それなのに全然勉強してないの"],
+    ["L","父","まぁ、そのうちちゃんとやり始めるさ"],
+    ["L","母","そのうち、そのうちって…いっつもそればっかり！本当に二人のことを考えてるの？？"],
+    ["L","父","（無言、たばこを取り出そうとするがないことに気が付く）"],
+    ["L","母","どこいくの？"],
+    ["L","父","…タバコだよ"],
+    ["L","母","はいはい"],
+    ["D",null,"父、上手へはける。それと入れ替わるように知恵が下手入り。"],
+    ["L","知恵","ただいま…まだ起きてたんだ"],
+    ["L","母","…お帰り"],
+    ["L","知恵","なんで怒ってるの？"],
+    ["L","母","別にそういうわけじゃないけど。そうだ、ごはんは？"],
+    ["L","知恵","食べてきた"],
+    ["L","母","食べてきたって…誰と？"],
+    ["L","知恵","友達"],
+    ["L","母","いつも言ってるじゃない、あらかじめ連絡してって"],
+    ["L","知恵","あ、忘れてた"],
+    ["L","母","このご飯どうするのよ"],
+    ["L","知恵","明日でも食べるから"],
+    ["L","母","本当にこの子ったら"],
+    ["L","知恵","おやすみ"],
+    ["L","母","ちょっと知恵！"],
+    ["D",null,"知恵、下手側に一度はける。母下手側にはける。父、下手に場入り。"],
+    ["L","父","ただいま…"],
+    ["D",null,"父、午後ティーを冷蔵庫にしまう。父、ごはんを食べる。知恵下手に場入り。"],
+    ["L","知恵","…"],
+    ["L","父","ああ、帰ってたのか。おかえり"],
+    ["L","知恵","（無視）（冷蔵庫を開けて）あ、午後ティーある！ラッキー"],
+    ["D",null,"知恵はけようとする。"],
+    ["L","父","知恵"],
+    ["L","知恵","なに？うるさいな"],
+    ["L","父","大学、最近どうだ？"],
+    ["L","知恵","別に"],
+    ["L","父","別にってなんだ"],
+    ["L","知恵","パパに関係ないでしょ"],
+    ["L","父","勉強だって進んでないみたいじゃないか、母さんから聞いたぞ"],
+    ["L","知恵","急になに、口出ししてこないでよ"],
+    ["D",null,"知恵、いなくなる。"],
+    ["S",null,"着信音、FI。"],
+    ["D",null,"知恵、電話をしながら準備を始める。準備が終わると上手側に出かけようとする。"],
+    ["L","知恵","もしもし？これから？別に暇だけど…そうなの！？行く行く！じゃ、いつものところに集合ね！"],
+    ["L","父","知恵"],
+    ["L","知恵","（無視して家を出ていく。）今から向かうから、１０分くらいでつくと思う"],
+    ["D",null,"知恵、話しながらはける。"]
+  ]},
+  { title:"♯３ 父の本音", cues:[
+    ["D",null,"照明転換。父が中央板付き。下手側から永遠が声のみで出演"],
+    ["L","永遠","店長、ごみ捨て行ってきます"],
+    ["D",null,"永遠、ごみ袋をもって場入り。"],
+    ["L","永遠","こんばんは。"],
+    ["L","父","こんばんは…"],
+    ["L","永遠","急にごめんなさい、私永遠です。中学生の時同じ吹奏楽部で"],
+    ["L","父","あの永遠ちゃんか！全然気が付かなかった。大人っぽくなったね"],
+    ["L","永遠","お久しぶりです"],
+    ["L","父","ここでバイトしてたんだね"],
+    ["L","永遠","そうなんです。"],
+    ["L","父","全然気が付かなかったよ"],
+    ["L","永遠","中学だから…８年くらい経ちますしね。私も雰囲気変わりましたし　そういえば、学君元気ですか？"],
+    ["L","父","まぁ、元気だよ。"],
+    ["L","永遠","それならよかった。今日知恵からいじめられて学校に行けてないって聞いたんです"],
+    ["L","父","そうだったんだ、心配かけてごめんね"],
+    ["L","永遠","昔仲良くさせてもらってたから気になってしまって…できることがあったら言ってくださいね"],
+    ["L","父","ありがとう。気持ちだけでうれしいよ　（ちょっと悩んで）知恵は大学ではどうだ？"],
+    ["L","永遠","元気ですよ、友達も多いですし"],
+    ["L","父","それならよかった。家ではあまり話していないからよくわからなくて"],
+    ["L","永遠","そうなんですか？仲良かったイメージでしたけど"],
+    ["L","父","試験の話も学校での様子も教えてもらってなくてね。まぁ、そんな年頃なんだろうかね。永遠ちゃんはどうするの？"],
+    ["L","永遠","私は先生になろうと思っています。昔からの夢なので"],
+    ["L","父","知恵も見習ってほしいものだな"],
+    ["L","永遠","でも、知恵も頑張ってますよ！きっと"],
+    ["L","父","はは…そうだといいんだけど　そろそろ家に戻るよ、引き止めてしまってすまないね"],
+    ["L","永遠","いえ、またお店来てくださいね"],
+    ["D",null,"父、はける。永遠もはける。暗転。"]
+  ]},
+  { title:"♯４ 学との衝突", cues:[
+    ["D",null,"学は下手側板付き。夜遊びから帰った知恵（酔っている）が下手側場入り。"],
+    ["L","知恵","ただいま～"],
+    ["L","学","……"],
+    ["L","知恵","…あれ！久しぶり～"],
+    ["L","学","……"],
+    ["L","知恵","まだ起きてるの？不良じゃん～"],
+    ["L","学","……"],
+    ["L","知恵","無視しなくたっていいじゃん"],
+    ["L","学","…お腹すいたから"],
+    ["L","知恵","ふーん。（冷蔵庫を開けて午後ティーを取り出す。）ラッキー！"],
+    ["L","知恵","早く寝なよ～？"],
+    ["L","学","……"],
+    ["L","知恵","あ、別に学校行ってないから関係ないか！（笑う）"],
+    ["L","学","……（怒りをあらわに）模試あるんだから、少しくらい勉強したら？"],
+    ["L","知恵","学に言われたくない。自分だって好きなことばっかりやってるくせに"],
+    ["L","学","……"],
+    ["L","知恵","いいなぁ～私もゲームだけやってごろごろしてた～い"],
+    ["L","学","…お前に（声を荒げる）お前に俺の何が分かるんだよ！"],
+    ["L","知恵","引きこもりの気持ちなんてわかりたくもありません"],
+    ["L","学","喧嘩売ってんのか？"],
+    ["L","知恵","事実を言って何が悪いの"],
+    ["L","学","喧嘩売ってんのかって言ってんだよ！"],
+    ["D",null,"学、手当たり次第、近くのものを投げつける。"],
+    ["L","知恵","何本気になってんの"],
+    ["L","学","……俺だって、やりたくてゲームしてるわけじゃねえよ。ゲームでもしてないと、惨めなんだよ……！何のために生きてるのか分かんなくなる。頭おかしくなりそうなんだよ！（ぽつりと）俺だって……学校に行きたい。友達と遊びたい…。でも行けないんだよ……！（顔を上げ、目を潤ませながら）姉ちゃんが羨ましいよ。普通に学校行って、友達と笑って、将来のこと考えて……俺にはそんなの、できないから"],
+    ["D",null,"母・父、その様子を見て、駆け付ける。"],
+    ["L","母","何してるのよ、夜に大声出して…"],
+    ["L","父","（知恵に向かって）大丈夫か？"],
+    ["L","学","姉ちゃんばっかり"],
+    ["D",null,"学、泣きながら下手側にはける。"],
+    ["L","父","何があったんだ？"],
+    ["L","知恵","知らない…学が突然キレたんだよ"],
+    ["L","母","知恵がなにかしたんじゃないの？"],
+    ["L","知恵","知らないって！別に好きなことだけやれていいね、うらやましいって言っただけ！"],
+    ["L","母","そんなこと言ったの！！"],
+    ["L","知恵","事実でしょ！？"],
+    ["L","父","学が学校行けなくなった理由、知恵も知ってるだろう？"],
+    ["L","知恵","そんな前のこと…学の心が弱いだけでしょ！"],
+    ["L","父","それは違う"],
+    ["L","知恵","っ…！"],
+    ["L","父","少し落ち着きなさい"],
+    ["L","知恵","何が違うの、本当のことを言ってるだけじゃん。"],
+    ["L","父","そう見えるかもしれないが、学なりに頑張ってるんだ"],
+    ["L","知恵","私にはそうは見えない"],
+    ["L","父","いいか、学は中学の時、いじめられて傷ついた経験があるんだ、乗り越えたくても簡単には乗り越えられない。きっと本人も学校に行きたいと思っているし、勉強もしたいと思っている。お姉ちゃんならわかってあげなさい？"],
+    ["L","知恵","何それ、お姉ちゃんだったらなんでもわかってあげないといけないの？"],
+    ["L","母","いや、そういうことじゃなくて"],
+    ["L","知恵","そういうことじゃん、こういう時ばっかりお姉ちゃんって…お父さんって本当に都合いいよね。私と学になんて興味ないくせに"],
+    ["D",null,"知恵、出ていく"],
+    ["L","母","待ちなさい、どこ行くの！"],
+    ["D",null,"父、母、はける。"]
+  ]},
+  { title:"♯５ 永遠とのシーン", cues:[
+    ["D",null,"知恵はステージ中央のベンチに座り、腕を組んで小さくなってる。ため息をつきながらスマホを取り出し、しばらく画面を見つめるが、結局何もせずにポケットにしまう。永遠、ベンチ前に登場する。"],
+    ["L","永遠","（驚いたように）知恵？"],
+    ["L","知恵","（無理に笑顔を作りながら）あれ、永遠じゃん。こんな時間にどうしたの？"],
+    ["L","永遠","それはこっちのセリフ。こんなところで何してるの？"],
+    ["L","知恵","（肩をすくめて）まぁね……ちょっと、いろいろあってさ"],
+    ["L","知恵","……学と喧嘩した。"],
+    ["L","永遠","そうなんだ。"],
+    ["L","知恵","お母さんとお父さんも私を悪者扱いして、説教してくるし。私のことなんて興味ないくせに。都合がいいときだけお姉ちゃんなんだからって。本当にうざい"],
+    ["L","永遠","興味ないなんてことないと思うけど…"],
+    ["L","知恵","どうだろうね、もし興味あるんだったらもっと話だって聞いてくれるし、私のやりたいことだって自由にやらせてくれるじゃん"],
+    ["L","永遠","知恵は自由じゃないの？"],
+    ["L","知恵","うん、なにをするにもママやパパが干渉してくる。私が好きにできていることなんて何もない"],
+    ["L","永遠","別にいろいろ好きにしてるじゃん"],
+    ["L","知恵","例えば？"],
+    ["L","永遠","大学の帰り、よく遊びに行ってるじゃん。カラオケ行ったりとかご飯食べに行ったりとか"],
+    ["L","知恵","でも、門限だって決まってるんだよ？もう大学生なのに"],
+    ["L","永遠","私は遊べてないよ？"],
+    ["L","知恵","バイトしてるからじゃん。バイト辞めたら？"],
+    ["L","永遠","幸せだね、知恵は"],
+    ["L","知恵","急に何？"],
+    ["L","永遠","優しいお父さんとお母さんがいて。ある程度好き勝手にしていても生活できる環境が整ってる。私からしたらすごくうらやましい。"],
+    ["L","知恵","どうしたの？"],
+    ["L","永遠","知恵、自分のこと自分で何もしてないでしょ？"],
+    ["L","知恵","そんなことない"],
+    ["L","永遠","じゃ、ごはんは？誰が作ってるの？"],
+    ["L","知恵","お母さん"],
+    ["L","永遠","じゃ、洗濯、家の掃除は？"],
+    ["L","知恵","それもお母さん"],
+    ["L","永遠","そういう家のこと、私は全部自分でやってるんだよ。"],
+    ["L","知恵","永遠のお母さんは？お父さんはどうしたの？"],
+    ["L","永遠","（ゆっくりと言葉を選びながら）言ってなかったんだけどさ、去年、お父さんが突然いなくなったんだ。"],
+    ["L","知恵","えっっ…！"],
+    ["L","永遠","びっくりするよね。新しい彼女さんができたみたい。ショックだった。でも落ち込んでばかりもいられなかった。お金がなくて生活できなくなった。"],
+    ["L","知恵","だからバイトしてるの？"],
+    ["L","永遠","そうそう。バイト前は１か月１日一食なんて時もあったんだよ"],
+    ["L","知恵","…かわいそう"],
+    ["L","永遠","かわいそう？誰が？"],
+    ["L","知恵","永遠が。"],
+    ["L","永遠","なんで？"],
+    ["L","知恵","自分のために時間を使えてない。何も自由なものがない。"],
+    ["L","永遠","そんなことない。私、今が一番幸せだよ"],
+    ["L","知恵","…"],
+    ["L","永遠","確かに自由に使えてないし、バイトも忙しいけど…お母さんと家で話す時間も増えたし。まぁ、知恵のこともうらやましいと思うけどね"],
+    ["L","永遠","（間を開けて）やっぱり夜になると寒いね。何かあったかいやつ買ってくる。"],
+    ["D",null,"永遠、立ち上がり、飲み物を買いに行く。"],
+    ["L","永遠","はい"],
+    ["L","知恵","え、ありがとう。お金、今持ってない…"],
+    ["L","永遠","そう？今度返して"],
+    ["L","知恵","私、午後ティーほんとに好きなんだよね"],
+    ["L","永遠","やっぱり？そうだと思った"],
+    ["L","知恵","なにそれ、どういうこと？"],
+    ["L","永遠","知恵のお父さんがいつも買いに来てたんだ"],
+    ["L","知恵","お父さん？"],
+    ["L","永遠","そう、バイト先によく買いに来てたんだ。知らなかったの？"],
+    ["L","知恵","うん…"],
+    ["D",null,"二人、沈黙。"],
+    ["L","永遠","（間を開けて）あのさ。知恵は、今幸せ？"],
+    ["L","知恵","（驚いて）え？"],
+    ["L","永遠","知恵は、今幸せ？"],
+    ["L","知恵","なんで？"],
+    ["L","永遠","いいから。考えてみて"],
+    ["L","知恵","…わかんない"],
+    ["L","永遠","どうして？"],
+    ["L","知恵","幸せってわかんない。別に困ってることがあるわけじゃないけど、幸せかって言われたら胸を張って幸せって言えない。"],
+    ["L","永遠","私にはすごく幸せそうに見える"],
+    ["L","知恵","永遠にはそう見えてるかもしれないけどさ"],
+    ["L","永遠","（立ち上がって）とりあえず、一回帰ってさ。家族のこともう少し考えてみなよ。"],
+    ["L","知恵","（しぶしぶ）…うん。"],
+    ["L","永遠","はい、これで家出は終わり！さっさと帰った！"],
+    ["L","知恵","家出じゃないし！"],
+    ["D",null,"永遠、はける。そのまま暗転。"]
+  ]},
+  { title:"♯６ 知恵と学", cues:[
+    ["D",null,"学、下手側に板付き。ゲームをしている。"],
+    ["L","知恵","（ノックする）"],
+    ["L","学","（無視）"],
+    ["D",null,"知恵、登場。学の隣に座る。"],
+    ["L","知恵","お、アタックシスターズじゃん、懐かし…"],
+    ["L","学","（無視）"],
+    ["L","知恵","私もやらせてよ"],
+    ["L","学","え、マジ"],
+    ["L","知恵","ジョイコンもう一つないの？"],
+    ["L","学","（…嫌そうに）そこ"],
+    ["L","知恵","なに使おうかな"],
+    ["D",null,"二人でしばらくゲームをする。"],
+    ["L","知恵","瞬殺…手加減してよ～"],
+    ["L","学","急に何？"],
+    ["L","知恵","たまにゲームしたいなと思って"],
+    ["L","学","あっそ"],
+    ["D",null,"しばらくゲームをする。ゲームをしながら、知恵が話し出す。"],
+    ["L","知恵","昼はさ、何やってるの？"],
+    ["L","学","ゲーム"],
+    ["L","知恵","ほかには？"],
+    ["L","学","チャットとか"],
+    ["L","知恵","え、友達いるんだ"],
+    ["L","学","暇つぶしだし"],
+    ["L","知恵","まぁ、話し相手いるならいいじゃん"],
+    ["L","学","うっざ"],
+    ["L","知恵","私お姉ちゃんだから"],
+    ["L","学","うっざ。勉強は？"],
+    ["L","知恵","やばい"],
+    ["L","学","ゲームしてないで勉強しろよ"],
+    ["L","知恵","息抜きです"],
+    ["L","学","息抜きばっかじゃん"],
+    ["L","知恵","うるさ～…あ、死んだ"],
+    ["L","学","息抜き終わりってことじゃない"],
+    ["L","知恵","はいはい（立ち上がって）リベンジマッチは明日ね"],
+    ["L","学","また来るの？"],
+    ["L","知恵","当たり前じゃん、息抜きは必要でしょ"],
+    ["L","学","いうほどやってないだろ"],
+    ["L","知恵","え、ばれた？でも来るから！"],
+    ["L","学","暇かよ"],
+    ["L","知恵","（去り際に）あんたさ、ご飯くらい食べたら？姉としての助言"],
+    ["D",null,"知恵、はける。"],
+    ["L","学","は、うざっ"],
+    ["D",null,"照明転換。"]
+  ]},
+  { title:"♯７ 新しい生活", cues:[
+    ["L","知恵","おはよう"],
+    ["L","母","おはよう"],
+    ["L","知恵","今日のごはん何？"],
+    ["L","母","ごはんと納豆、みそ汁よ。"],
+    ["L","知恵","私何かしようか？"],
+    ["L","母","…じゃあ、お味噌汁温めてちょうだい"],
+    ["L","知恵","わかった"],
+    ["D",null,"知恵、準備を進めながら"],
+    ["L","知恵","お母さん、いつもありがとね"],
+    ["L","母","どうしたの、急に"],
+    ["L","知恵","別に、私も少しは大人になったほうがいいかなと思って"],
+    ["L","母","そうね。なら、まず門限守ってよね"],
+    ["L","知恵","はーい、ごはんの連絡もちゃんとします　ご飯って炊けてる？"],
+    ["L","母","炊けてる、よそってくれるの？"],
+    ["L","知恵","うん、しゃもじってどこ？"],
+    ["L","母","引き出しの中、真ん中の"],
+    ["D",null,"知恵、ごはんをよそう。"],
+    ["L","母","数多くない？"],
+    ["L","知恵","学の分"],
+    ["L","母","きっと食べないよ"],
+    ["L","知恵","食べなかったらラップしといて、夜食べるから"],
+    ["L","母","そう"],
+    ["D",null,"そのほかのものも準備する。"],
+    ["L","知恵","いただきます"],
+    ["D",null,"知恵、ごはんを食べる。"],
+    ["L","知恵","昨日、学とゲームしたんだ"],
+    ["L","母","え！入れてくれたの？"],
+    ["L","知恵","無理やり入った"],
+    ["L","母","また喧嘩、してないでしょうね"],
+    ["L","知恵","してないよ"],
+    ["L","母","それならいいけど…"],
+    ["L","知恵","ずっと無視してたけど、最後は少し話したよ。ごはん食べるように言っておいたから、後で降りてくるかも"],
+    ["L","母","そう"],
+    ["L","知恵","やばい、遅刻する！ごちそうさまでした。行ってきます！"],
+    ["L","母","あ、知恵！飲み物忘れないで！"],
+    ["L","知恵","あ、ありがとう！（午後ティーをもって）行ってきます！"],
+    ["L","母","行ってらっしゃい"],
+    ["D",null,"知恵はける。その後学場入り。END"]
+  ]}
+  ];
+  var BUILTIN_1031_AUDIO_FROM = {"3":[["hakoi-kata-1023",3]],"6":[["hakoi-kata-1023",6]],"13":[["hakoi-kata-1023",21]],"14":[["hakoi-kata-1023",22]],"15":[["hakoi-kata-1023",23]],"16":[["hakoi-kata-1023",24]],"17":[["hakoi-kata-1023",25]],"18":[["hakoi-kata-1023",26]],"19":[["hakoi-kata-1023",27]],"20":[["hakoi-kata-1023",28]],"21":[["hakoi-kata-1023",29]],"22":[["hakoi-kata-1023",30]],"23":[["hakoi-kata-1023",31]],"24":[["hakoi-kata-1023",32]],"25":[["hakoi-kata-1023",33]],"26":[["hakoi-kata-1023",34]],"27":[["hakoi-kata-1023",35]],"28":[["hakoi-kata-1023",36]],"29":[["hakoi-kata-1023",37]],"33":[["hakoi-kata-1023",41]],"34":[["hakoi-kata-1023",42]],"35":[["hakoi-kata-1023",43]],"37":[["hakoi-kata-1023",45]],"38":[["hakoi-kata-1023",46]],"40":[["hakoi-kata-1023",48]],"48":[["hakoi-kata-1023",56]],"49":[["hakoi-kata-1023",57]],"50":[["hakoi-kata-1023",58]],"51":[["hakoi-kata-1023",59]],"52":[["hakoi-kata-1023",60]],"53":[["hakoi-kata-1023",61]],"54":[["hakoi-kata-1023",64]],"56":[["hakoi-kata-1023",66]],"60":[["hakoi-kata-1023",70]],"61":[["hakoi-kata-1023",71]],"62":[["hakoi-kata-1023",72]],"63":[["hakoi-kata-1023",73]],"64":[["hakoi-kata-1023",74]],"67":[["hakoi-kata-1023",77]],"69":[["hakoi-kata-1023",79]],"74":[["hakoi-kata-1023",86]],"76":[["hakoi-kata-1023",90]],"90":[["hakoi-kata-1023",110]],"93":[["hakoi-kata-1023",115]],"94":[["hakoi-kata-1023",116]],"95":[["hakoi-kata-1023",117]],"96":[["hakoi-kata-1023",118]],"97":[["hakoi-kata-1023",119]],"98":[["hakoi-kata-1023",120]],"99":[["hakoi-kata-1023",121]],"100":[["hakoi-kata-1023",122]],"106":[["hakoi-kata-1023",132]],"108":[["hakoi-kata-1023",134]],"110":[["hakoi-kata-1023",135]],"111":[["hakoi-kata-1023",136]],"112":[["hakoi-kata-1023",137]],"113":[["hakoi-kata-1023",138]],"114":[["hakoi-kata-1023",139]],"115":[["hakoi-kata-1023",140]],"122":[["hakoi-kata-1023",149]],"126":[["hakoi-kata-1023",167]],"153":[["hakoi-kata-1023",205]],"154":[["hakoi-kata-1023",206]],"156":[["hakoi-kata-1023",208]],"158":[["hakoi-kata-1023",210]],"159":[["hakoi-kata-1023",211]],"160":[["hakoi-kata-1023",212]],"163":[["hakoi-kata-1023",215]],"167":[["hakoi-kata-1023",219]],"170":[["hakoi-kata-1023",224]],"171":[["hakoi-kata-1023",225]],"172":[["hakoi-kata-1023",226]],"173":[["hakoi-kata-1023",227]],"182":[["hakoi-kata-1023",243]],"183":[["hakoi-kata-1023",244]],"191":[["hakoi-kata-1023",252]],"192":[["hakoi-kata-1023",253]],"205":[["hakoi-kata-1023",297]],"207":[["hakoi-kata-1023",299]],"208":[["hakoi-kata-1023",317]],"213":[["hakoi-kata-1023",328]],"214":[["hakoi-kata-1023",329]],"215":[["hakoi-kata-1023",332]],"216":[["hakoi-kata-1023",333]],"219":[["hakoi-kata-1023",336]],"221":[["hakoi-kata-1023",340]],"222":[["hakoi-kata-1023",341]],"225":[["hakoi-kata-1023",346]],"226":[["hakoi-kata-1023",347]],"227":[["hakoi-kata-1023",348]],"229":[["hakoi-kata-1023",350]],"231":[["hakoi-kata-1023",352]],"238":[["hakoi-kata-1023",353]],"239":[["hakoi-kata-1023",354]],"240":[["hakoi-kata-1023",355]],"242":[["hakoi-kata-1023",357]],"248":[["hakoi-kata-1023",370]],"257":[["hakoi-kata-1023",377]],"260":[["hakoi-kata-1023",383]],"261":[["hakoi-kata-1023",384]],"262":[["hakoi-kata-1023",385]],"263":[["hakoi-kata-1023",386]],"264":[["hakoi-kata-1023",387]],"265":[["hakoi-kata-1023",388]],"266":[["hakoi-kata-1023",389]],"275":[["hakoi-kata-1023",409]],"276":[["hakoi-kata-1023",410]],"278":[["hakoi-kata-1023",414]],"279":[["hakoi-kata-1023",415]],"280":[["hakoi-kata-1023",416]],"281":[["hakoi-kata-1023",417]],"287":[["hakoi-kata-1023",422]],"288":[["hakoi-kata-1023",423]],"289":[["hakoi-kata-1023",424]],"317":[["hakoi-kata-1023",491]],"318":[["hakoi-kata-1023",492]],"325":[["hakoi-kata-1023",499]],"326":[["hakoi-kata-1023",500]],"327":[["hakoi-kata-1023",501]],"338":[["hakoi-kata-1023",509]],"353":[["hakoi-kata-1023",514]]};
+
   /* ---------------- currently loaded script (mutable — swapped by loadScript()) ---------------- */
   var SCENES, CHAR_META, CHAR_LIST, CUES, totalLineCount;
 
@@ -1401,6 +1782,7 @@
     currentScriptId = record.id;
     currentAudioFrom = record.audioFrom || {};
     invalidateResolved();   // the cache is keyed by cue index alone, so it belongs to one script
+    humanTakeState = {};
     SCENES = record.scenes;
     CHAR_META = record.charMeta;
     CHAR_LIST = record.charList;
@@ -1568,6 +1950,14 @@
   // that has audio, so editing a script never loses the voices it already had.
   var currentAudioFrom = {};
   var BUILTIN_SCRIPT_META = { id:"hakoi-kata-1023", name:"「幸せのカタチ」10/23版", builtin:true };
+  var BUILTIN_1031_META = { id:"hakoi-kata-1031", name:"「幸せのカタチ」10/31版", builtin:true };
+  var BUILTIN_SCRIPTS = [BUILTIN_1031_META, BUILTIN_SCRIPT_META];   // newest first in the library
+  function builtinData(id){
+    var latest = id === BUILTIN_1031_META.id;
+    var meta = latest ? BUILTIN_1031_META : BUILTIN_SCRIPT_META;
+    return { id: meta.id, name: meta.name, scenes: latest ? BUILTIN_1031_SCENES : BUILTIN_SCENES,
+             charMeta: BUILTIN_CHAR_META, charList: BUILTIN_CHAR_LIST, audioFrom: latest ? BUILTIN_1031_AUDIO_FROM : null };
+  }
 
   function recordingKey(scriptId, cueIndex){ return scriptId + "::" + cueIndex; }
 
@@ -1915,11 +2305,13 @@
         // a brand-new (empty) database, and briefly show an empty library.
         var tx = db.transaction("scripts","readwrite");
         var store = tx.objectStore("scripts");
-        store.get(BUILTIN_SCRIPT_META.id).onsuccess = function(ev){
-          if (!ev.target.result){
-            store.put({ id:BUILTIN_SCRIPT_META.id, name:BUILTIN_SCRIPT_META.name, builtin:true, createdAt:0, updatedAt:0 });
-          }
-        };
+        BUILTIN_SCRIPTS.forEach(function(meta){
+          store.get(meta.id).onsuccess = function(ev){
+            if (!ev.target.result){
+              store.put({ id:meta.id, name:meta.name, builtin:true, createdAt:0, updatedAt:0 });
+            }
+          };
+        });
         tx.oncomplete = function(){ resolve(db); };
         tx.onerror = function(){ reject(tx.error); };
       };
@@ -2183,6 +2575,7 @@
   // the status line instead of being swallowed.
   function persistTake(cueIndex, character, blob, takenAt){
     invalidateResolved(cueIndex);
+    setHumanTake(cueIndex, true);   // recorded: the 人の声なし tint goes at once
     setSaveState(cueIndex, "saving");
     inFlightSaves++;
     var localOk = false;
@@ -2462,6 +2855,7 @@
     ]).then(function(){
       invalidateResolved(idx);
       updateRecordUI();
+      refreshHumanHighlight();
     }, function(){
       invalidateResolved(idx);
       updateRecordUI();
@@ -2893,7 +3287,7 @@
 
   function scriptCountLabel(record){
     if (record.sharedOnly) return record.sceneCount + "場面・" + record.charCount + "役・共有";
-    var scenes = record.builtin ? BUILTIN_SCENES.length : (record.scenes || []).length;
+    var scenes = record.builtin ? builtinData(record.id).scenes.length : (record.scenes || []).length;
     var chars = record.builtin ? BUILTIN_CHAR_LIST.length : (record.charList || []).length;
     return scenes + "場面・" + chars + "役" + (record.shared ? "・共有" : "");
   }
@@ -2903,7 +3297,7 @@
   // changed in place — editing saves a new one — so the copy can't go stale).
   function getScriptData(record){
     if (record.builtin){
-      return Promise.resolve({ id: record.id, name: record.name, scenes: BUILTIN_SCENES, charMeta: BUILTIN_CHAR_META, charList: BUILTIN_CHAR_LIST });
+      return Promise.resolve(builtinData(record.id));
     }
     if (record.sharedOnly){
       return fetchSharedScript(record.id).then(function(data){
@@ -3007,7 +3401,7 @@
     var saved = null;
     try { saved = JSON.parse(localStorage.getItem("exportMeta::" + data.id) || "null"); } catch (e){}
     if (saved) return saved;
-    if (data.id === BUILTIN_SCRIPT_META.id) return JSON.parse(JSON.stringify(BUILTIN_EXPORT_META));
+    if (BUILTIN_SCRIPTS.some(function(b){ return b.id === data.id; })) return JSON.parse(JSON.stringify(BUILTIN_EXPORT_META));
     return { title: data.name, author:"", gender:{} };
   }
   function readExportMeta(){
@@ -3262,7 +3656,7 @@
   function renderLibrary(){
     var token = ++libraryRenderToken;
     scriptListEl.innerHTML = "";
-    appendScriptCard(BUILTIN_SCRIPT_META);
+    BUILTIN_SCRIPTS.forEach(appendScriptCard);
     var localPr = getAllScripts().then(function(records){
       return records.filter(function(r){ return !r.builtin; });
     }).catch(function(){ return []; });
@@ -4226,6 +4620,117 @@
     return !!state.absent[cue.character];
   }
 
+  /* ---------------- 人の声がないセリフのハイライト ----------------
+     In 個人練習 and まとめて録音, every line that has no take recorded by a person
+     (only the generated voice, or nothing) is tinted, so the cast can see what is
+     left to record. A line counts as recorded if it, or the unchanged line it
+     borrows audio from (audioFrom), has a take on this device or shared in the
+     cloud. Saving a take clears the tint at once; a light check every 30s picks
+     up takes other people recorded. Only take metadata is read, never audio. */
+  var humanTakeState = {};      // cueIndex -> true | false, for the loaded script
+  var humanCheckToken = 0;
+  var noVoiceCountEl = document.getElementById("novoice-count");
+
+  function humanHighlightMode(){ return state.mode === "solo" || state.mode === "rec"; }
+
+  function voicedCueIndices(){
+    var out = [];
+    for (var i = 0; i < CUES.length; i++) if (CUES[i].type === "L" && hasWords(CUES[i].text)) out.push(i);
+    return out;
+  }
+
+  // -> { docId: {deleted, updatedAt} } for the take documents that exist
+  function cloudTakeMetas(docIds){
+    var url = "https://firestore.googleapis.com/v1/projects/" + FIREBASE_PROJECT_ID + "/databases/(default)/documents:batchGet?key=" + FIREBASE_API_KEY;
+    var base = "projects/" + FIREBASE_PROJECT_ID + "/databases/(default)/documents/recordings/";
+    var chunks = [];
+    for (var i = 0; i < docIds.length; i += 250) chunks.push(docIds.slice(i, i + 250));
+    return Promise.all(chunks.map(function(ids){
+      return fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documents: ids.map(function(id){ return base + id; }), mask: { fieldPaths: ["deleted", "updatedAt"] } })
+      }).then(function(res){ if (!res.ok) throw codedError("http-" + res.status); return res.json(); });
+    })).then(function(lists){
+      var out = {};
+      lists.forEach(function(arr){
+        arr.forEach(function(e){
+          if (!e.found) return;
+          var f = e.found.fields || {};
+          out[e.found.name.split("/").pop()] = { deleted: !!(f.deleted && f.deleted.booleanValue), updatedAt: numField(f, "updatedAt") || 0 };
+        });
+      });
+      return out;
+    });
+  }
+
+  // -> { recordingKey: updatedAt } for the takes kept on this device
+  function localTakeMetas(keys){
+    return getDB().then(function(db){
+      return new Promise(function(resolve){
+        var out = {}, tx = db.transaction("recordings", "readonly"), store = tx.objectStore("recordings");
+        keys.forEach(function(k){
+          store.get(k).onsuccess = function(ev){ var r = ev.target.result; if (r && r.blob) out[k] = r.updatedAt || 0; };
+        });
+        tx.oncomplete = function(){ resolve(out); };
+        tx.onerror = tx.onabort = function(){ resolve(out); };
+      });
+    }).catch(function(){ return {}; });
+  }
+
+  function setHumanTake(cueIndex, has){
+    humanTakeState[cueIndex] = has;
+    var entry = rowsByIndex[cueIndex];
+    if (entry) entry.main.classList.toggle("no-voice", humanHighlightMode() && !has);
+    updateNoVoiceCount();
+  }
+
+  function updateNoVoiceCount(){
+    if (!noVoiceCountEl) return;
+    var n = 0;
+    if (humanHighlightMode()) for (var k in humanTakeState) if (humanTakeState[k] === false) n++;
+    noVoiceCountEl.hidden = !n;
+    noVoiceCountEl.textContent = "人の声なし " + n + "行";
+  }
+
+  // Re-applies what is known to freshly built rows, then asks again.
+  function applyHumanHighlight(){
+    var on = humanHighlightMode();
+    voicedCueIndices().forEach(function(i){
+      var entry = rowsByIndex[i];
+      if (entry) entry.main.classList.toggle("no-voice", on && humanTakeState[i] === false);
+    });
+    updateNoVoiceCount();
+    if (on) refreshHumanHighlight();
+  }
+
+  function refreshHumanHighlight(){
+    if (!humanHighlightMode()) return;
+    var token = ++humanCheckToken, scriptId = currentScriptId;
+    var idxs = voicedCueIndices(), pairs = [], keys = {}, docs = {};
+    idxs.forEach(function(i){
+      [[scriptId, i]].concat(currentAudioFrom[i] || []).forEach(function(src){
+        var p = { i: i, key: recordingKey(src[0], src[1]), doc: cloudDocId(src[0], src[1]) };
+        pairs.push(p); keys[p.key] = true; docs[p.doc] = true;
+      });
+    });
+    Promise.all([localTakeMetas(Object.keys(keys)), cloudTakeMetas(Object.keys(docs))]).then(function(r){
+      if (token !== humanCheckToken || scriptId !== currentScriptId) return;
+      var local = r[0], cloud = r[1], has = {};
+      pairs.forEach(function(p){
+        var c = cloud[p.doc], l = local[p.key];
+        var cloudTake = c && !c.deleted;
+        var localTake = l !== undefined && !(c && c.deleted && c.updatedAt >= l);
+        if (cloudTake || localTake) has[p.i] = true;
+      });
+      idxs.forEach(function(i){ setHumanTake(i, !!has[i]); });
+    }, function(){ /* offline: keep showing what was known */ });
+  }
+
+  setInterval(function(){
+    if (stageEl.style.display !== "none" && !document.hidden) refreshHumanHighlight();
+  }, 30000);
+
   function appendRow(cue, idxGlobal){
     var sceneDivEl = null;
     if (cue.sceneStart){
@@ -4276,6 +4781,7 @@
       setRowState(i, "upcoming");
     }
     applyHideMine();
+    applyHumanHighlight();
   }
 
   // 自動で進む: in 個人練習 your own line can also move on by itself, after as long as
@@ -4646,13 +5152,7 @@
     }
   });
 
-  loadScript({
-    id: BUILTIN_SCRIPT_META.id,
-    name: BUILTIN_SCRIPT_META.name,
-    scenes: BUILTIN_SCENES,
-    charMeta: BUILTIN_CHAR_META,
-    charList: BUILTIN_CHAR_LIST
-  });
+  loadScript(builtinData(BUILTIN_1031_META.id));
   renderLibrary();
   showScreen("library");
 
