@@ -145,27 +145,49 @@
   .manual-link{ color:var(--accent-2); font-weight:600; text-decoration:underline; text-underline-offset:2px; }
   .import-textarea{ line-height:1.7; resize:vertical; }
 
-  .review-rows{ display:flex; flex-direction:column; gap:.4rem; max-height:60vh; overflow-y:auto; padding:.2rem; }
-  .review-row{
-    display:flex; align-items:center; gap:.4rem; flex-wrap:wrap;
-    border:1px solid var(--border); border-radius:8px; padding:.4rem .5rem; background:var(--surface);
+  /* The review/edit list reads like the rehearsal stage (same .row / .who / .say
+     styles); tapping a row swaps it for an editor card, and the "+" between rows
+     inserts a new line exactly there. */
+  .review-rows{ display:flex; flex-direction:column; max-height:60vh; overflow-y:auto; padding:.2rem; }
+  .review-rows .row{ cursor:pointer; border-radius:var(--radius); }
+  .review-rows .row:hover{ background:color-mix(in srgb, var(--ink) 5%, transparent); }
+  .review-rows .row.scene-div{ margin:.5rem 0 .1rem; text-transform:none; }
+  .review-empty{ color:var(--ink-dim); font-style:italic; }
+  .review-gap{
+    display:flex; align-items:center; width:100%; height:.9rem; padding:0; border:none; background:none;
+    cursor:pointer; opacity:0; transition:opacity .15s; flex:none;
   }
-  .review-row-scene{ background:var(--surface-2); border-style:dashed; }
-  .review-type-toggle{ display:flex; gap:.15rem; flex:none; }
+  .review-gap::before, .review-gap::after{ content:""; flex:1; height:1px; background:var(--accent-2); margin:0 .4rem; }
+  .review-gap span{
+    width:1.15rem; height:1.15rem; border-radius:50%; border:1px solid var(--accent-2); color:var(--accent-2);
+    background:var(--surface); display:grid; place-items:center; font-size:.8rem; line-height:1;
+  }
+  .review-gap:hover, .review-gap:focus-visible{ opacity:1; }
+  .review-editor{
+    display:flex; flex-direction:column; gap:.55rem; margin:.15rem 0; padding:.7rem;
+    background:var(--surface); border:1px solid var(--accent-2); box-shadow:0 0 0 1px var(--accent-2) inset;
+    border-radius:var(--radius);
+  }
+  .review-types{ display:flex; flex-wrap:wrap; gap:.3rem; }
   .review-type-btn{
     border:1px solid var(--border); background:var(--surface-2); color:var(--ink-dim);
-    border-radius:6px; width:1.7rem; height:1.7rem; font-size:.72rem; cursor:pointer;
+    border-radius:999px; padding:.3rem .7rem; font-size:.78rem; cursor:pointer;
   }
   .review-type-btn.active{ border-color:var(--accent); color:var(--accent); font-weight:700; background:var(--accent-soft); }
-  .review-char-input{ width:5rem; flex:none; }
-  .review-scene-input{ flex:1; font-weight:700; }
-  .review-char-input, .review-text-input, .review-scene-input{
-    padding:.35rem .5rem; border:1px solid var(--border); border-radius:6px;
-    background:var(--surface); color:var(--ink); font-size:.82rem;
+  .review-editor .role-grid{ gap:.35rem; }
+  .review-editor .role-chip{ padding:.3rem .75rem; font-size:.8rem; }
+  .review-new-role{
+    width:7rem; padding:.3rem .7rem; border:1px dashed var(--border); border-radius:999px;
+    background:var(--surface); color:var(--ink); font-size:.8rem;
   }
-  .review-text-input{ flex:1; min-width:8rem; }
-  .review-row-actions{ display:flex; gap:.2rem; flex:none; }
-  .review-small-btn{ padding:.3rem .45rem; font-size:.72rem; }
+  .review-text-input{
+    width:100%; min-height:2.6rem; padding:.45rem .6rem; resize:none; overflow:hidden;
+    border:1px solid var(--border); border-radius:8px; background:var(--surface-2); color:var(--ink);
+    font-family:var(--serif); font-size:1rem; line-height:1.7;
+  }
+  .review-actions{ display:flex; flex-wrap:wrap; gap:.35rem; }
+  .review-actions .btn{ padding:.4rem .65rem; font-size:.78rem; }
+  .review-actions .btn.primary{ flex:none; margin-left:auto; font-size:.82rem; }
 
   /* ---------- setup screen ---------- */
   #setup{
@@ -463,10 +485,9 @@
   :root[data-ui="mobile"] .script-card-actions .btn{ min-height:2.75rem; padding:.5rem .9rem; font-size:.88rem; }
   :root[data-ui="mobile"] .import-input,
   :root[data-ui="mobile"] .import-textarea,
-  :root[data-ui="mobile"] .review-char-input,
-  :root[data-ui="mobile"] .review-text-input,
-  :root[data-ui="mobile"] .review-scene-input{ font-size:16px; }
-  :root[data-ui="mobile"] .review-char-input{ width:4.5rem; }
+  :root[data-ui="mobile"] .review-text-input, :root[data-ui="mobile"] .review-new-role{ font-size:16px; }
+  :root[data-ui="mobile"] .review-gap{ opacity:.45; height:1.5rem; }
+  :root[data-ui="mobile"] .review-gap::before, :root[data-ui="mobile"] .review-gap::after{ background:var(--border); }
   :root[data-ui="mobile"] .review-rows{ max-height:none; }
 
   /* --- stage: the speaker name reads as a label above the line, not as a
@@ -592,7 +613,6 @@
         <label class="hint" for="edit-name-input" style="display:block;margin-bottom:.3rem;">新しい台本の名前（元の台本はそのまま残ります）</label>
         <input type="text" id="edit-name-input" class="import-input">
       </div>
-      <datalist id="review-char-datalist"></datalist>
       <div id="review-rows" class="review-rows"></div>
       <button class="btn ghost" id="review-add-row-btn" style="width:100%;margin:.6rem 0;">＋ 行を追加</button>
       <p class="hint" id="review-error" style="display:none;color:var(--danger);"></p>
@@ -3161,6 +3181,7 @@
     document.getElementById("edit-name-input").value = data.name + "（" + (d.getMonth() + 1) + "/" + d.getDate() + "修正）";
     setReviewEditMode(data);
     reviewRows = buildReviewRows(scenesToFlatCues(data.scenes));
+    reviewEditingIdx = -1;
     renderReviewTable();
     showImportSubview("review");
     showScreen("import");
@@ -3223,103 +3244,214 @@
     });
   }
 
-  function mkSmallBtn(label, title, onClick){
+  var REVIEW_TYPES = [["L","セリフ"], ["D","ト書き"], ["S","効果音"], ["N","メモ"], ["SCENE","場面"]];
+  var reviewEditingIdx = -1;   // the row shown as an editor card, or -1
+
+  // Roles in order of first appearance, with the colour they have on the stage:
+  // an edited script's own colours, otherwise the palette the saved script will get.
+  function reviewRoles(){
+    var seen = {}, list = [];
+    reviewRows.forEach(function(r){
+      if (!r.isScene && r.type === "L" && r.character && !seen[r.character]){ seen[r.character] = true; list.push(r.character); }
+    });
+    return list;
+  }
+  function reviewRoleColor(name, roles){
+    if (editSource && editSource.charMeta && editSource.charMeta[name]) return editSource.charMeta[name].color;
+    var i = roles.indexOf(name);
+    return i < 0 ? "inherit" : CHAR_PALETTE[i % CHAR_PALETTE.length].color;
+  }
+
+  // A line inserted into a conversation is most likely the other person's turn:
+  // the speaker before the previous one, if the last two lines alternate.
+  function guessSpeaker(pos){
+    var prev = [];
+    for (var i = pos - 1; i >= 0 && prev.length < 2; i--){
+      var r = reviewRows[i];
+      if (r.isScene) break;
+      if (r.type === "L" && r.character && prev.indexOf(r.character) < 0) prev.push(r.character);
+    }
+    return prev.length === 2 ? prev[1] : (prev[0] || "");
+  }
+
+  function editReviewRow(idx){
+    reviewEditingIdx = idx;
+    renderReviewTable();
+    var ed = document.querySelector("#review-rows .review-editor");
+    if (ed){
+      ed.scrollIntoView({ block: "nearest" });
+      var ta = ed.querySelector("textarea");
+      if (ta){ ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+    }
+  }
+
+  function insertReviewRow(pos){
+    reviewRows.splice(pos, 0, { isScene:false, type:"L", character:guessSpeaker(pos), text:"" });
+    editReviewRow(pos);
+  }
+
+  function reviewRowView(row, idx, roles){
+    var el = document.createElement("div");
+    if (row.isScene){
+      el.className = "row scene-div";
+      el.textContent = row.title || "（場面名なし）";
+    } else if (row.type === "D" || row.type === "S"){
+      el.className = "row direction";
+      el.textContent = (row.type === "S" ? "♪ " : "") + (row.text || "（空の行）");
+    } else if (row.type === "N"){
+      el.className = "row note";
+      el.textContent = row.text || "（空のメモ）";
+    } else {
+      el.className = "row line";
+      var who = document.createElement("div");
+      who.className = "who";
+      who.style.setProperty("--chip-color", reviewRoleColor(row.character, roles));
+      who.textContent = row.character || "（役なし）";
+      var say = document.createElement("div");
+      say.className = "say";
+      if (row.text) say.innerHTML = escapeHtml(row.text).replace(/([（(][^）)]*[）)])/g, '<span class="beat">$1</span>');
+      else { say.className = "say review-empty"; say.textContent = "（空のセリフ）"; }
+      el.appendChild(who); el.appendChild(say);
+    }
+    el.title = "タップして修正";
+    el.addEventListener("click", function(){ editReviewRow(idx); });
+    return el;
+  }
+
+  function reviewActionBtn(label, onClick, cls){
     var b = document.createElement("button");
-    b.type = "button"; b.className = "btn ghost review-small-btn"; b.textContent = label;
-    if (title) b.title = title;
+    b.type = "button"; b.className = "btn " + (cls || "ghost"); b.textContent = label;
     b.addEventListener("click", onClick);
+    return b;
+  }
+
+  function reviewRowEditor(row, idx, roles){
+    var ed = document.createElement("div");
+    ed.className = "review-editor";
+
+    var types = document.createElement("div");
+    types.className = "review-types";
+    var curType = row.isScene ? "SCENE" : row.type;
+    REVIEW_TYPES.forEach(function(t){
+      var b = document.createElement("button");
+      b.type = "button"; b.textContent = t[1];
+      b.className = "review-type-btn" + (curType === t[0] ? " active" : "");
+      b.addEventListener("click", function(){
+        if (t[0] === curType) return;
+        var text = row.isScene ? row.title : row.text;
+        if (t[0] === "SCENE") reviewRows[idx] = { isScene:true, title:text };
+        else reviewRows[idx] = { isScene:false, type:t[0], character: row.character || (t[0] === "L" ? guessSpeaker(idx) : ""), text:text };
+        editReviewRow(idx);
+      });
+      types.appendChild(b);
+    });
+    ed.appendChild(types);
+
+    if (!row.isScene && row.type === "L"){
+      var grid = document.createElement("div");
+      grid.className = "role-grid";
+      roles.forEach(function(name){
+        var chip = document.createElement("button");
+        chip.type = "button"; chip.className = "role-chip";
+        chip.setAttribute("aria-pressed", row.character === name ? "true" : "false");
+        var color = reviewRoleColor(name, roles);
+        chip.style.setProperty("--chip-color", color);
+        chip.style.setProperty("--chip-bg", "color-mix(in srgb, " + color + " 18%, transparent)");
+        var dot = document.createElement("span"); dot.className = "dot"; dot.style.background = color;
+        chip.appendChild(dot); chip.appendChild(document.createTextNode(name));
+        chip.addEventListener("click", function(){ row.character = name; editReviewRow(idx); });
+        grid.appendChild(chip);
+      });
+      var newRole = document.createElement("input");
+      newRole.type = "text"; newRole.className = "review-new-role"; newRole.placeholder = "＋ 新しい役";
+      if (row.character && roles.indexOf(row.character) < 0) newRole.value = row.character;
+      newRole.addEventListener("change", function(){
+        var v = newRole.value.trim();
+        if (v){ row.character = v; editReviewRow(idx); }
+      });
+      grid.appendChild(newRole);
+      ed.appendChild(grid);
+    }
+
+    var ta = document.createElement("textarea");
+    ta.className = "review-text-input"; ta.rows = 1;
+    ta.value = row.isScene ? row.title : row.text;
+    ta.placeholder = row.isScene ? "場面の名前（例：♯2　次の日の朝）" : (row.type === "L" ? "セリフ" : "内容");
+    function grow(){ ta.style.height = "auto"; ta.style.height = ta.scrollHeight + "px"; }
+    ta.addEventListener("input", function(){
+      if (row.isScene) row.title = ta.value; else row.text = ta.value;
+      grow();
+    });
+    ta.addEventListener("keydown", function(ev){
+      if (ev.key === "Escape"){ reviewEditingIdx = -1; renderReviewTable(); }
+    });
+    ed.appendChild(ta);
+    setTimeout(grow, 0);
+
+    var actions = document.createElement("div");
+    actions.className = "review-actions";
+    actions.appendChild(reviewActionBtn("▲ 上へ", function(){
+      if (idx === 0) return;
+      var tmp = reviewRows[idx-1]; reviewRows[idx-1] = reviewRows[idx]; reviewRows[idx] = tmp;
+      editReviewRow(idx - 1);
+    }));
+    actions.appendChild(reviewActionBtn("▼ 下へ", function(){
+      if (idx === reviewRows.length - 1) return;
+      var tmp = reviewRows[idx+1]; reviewRows[idx+1] = reviewRows[idx]; reviewRows[idx] = tmp;
+      editReviewRow(idx + 1);
+    }));
+    if (!row.isScene){
+      actions.appendChild(reviewActionBtn("前の行と結合", function(){
+        if (idx === 0 || reviewRows[idx-1].isScene) return;
+        reviewRows[idx-1].text += row.text;
+        reviewRows.splice(idx, 1);
+        editReviewRow(idx - 1);
+      }));
+      actions.appendChild(reviewActionBtn("カーソル位置で分割", function(){
+        var text = row.text;
+        if (!text) return;
+        var pos = ta.selectionStart;
+        if (!(pos > 0 && pos < text.length)) pos = Math.floor(text.length / 2);
+        row.text = text.slice(0, pos);
+        reviewRows.splice(idx + 1, 0, { isScene:false, type:row.type, character:row.character, text:text.slice(pos) });
+        editReviewRow(idx + 1);
+      }));
+    }
+    actions.appendChild(reviewActionBtn("削除", function(){
+      reviewRows.splice(idx, 1);
+      reviewEditingIdx = -1;
+      renderReviewTable();
+    }));
+    actions.appendChild(reviewActionBtn("完了", function(){
+      reviewEditingIdx = -1;
+      renderReviewTable();
+    }, "primary"));
+    ed.appendChild(actions);
+    return ed;
+  }
+
+  function reviewGap(pos){
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "review-gap";
+    b.title = "ここにセリフを追加"; b.setAttribute("aria-label", "ここにセリフを追加");
+    var plus = document.createElement("span"); plus.textContent = "＋";
+    b.appendChild(plus);
+    b.addEventListener("click", function(){ insertReviewRow(pos); });
     return b;
   }
 
   function renderReviewTable(){
     var wrap = document.getElementById("review-rows");
+    var keepScroll = wrap.scrollTop;
     wrap.innerHTML = "";
-
-    var knownChars = {};
-    reviewRows.forEach(function(r){ if (!r.isScene && r.type === "L" && r.character) knownChars[r.character] = true; });
-    var datalist = document.getElementById("review-char-datalist");
-    datalist.innerHTML = "";
-    Object.keys(knownChars).forEach(function(name){
-      var opt = document.createElement("option"); opt.value = name; datalist.appendChild(opt);
-    });
-
+    if (reviewEditingIdx >= reviewRows.length) reviewEditingIdx = -1;
+    var roles = reviewRoles();
+    wrap.appendChild(reviewGap(0));
     reviewRows.forEach(function(row, idx){
-      var rowEl = document.createElement("div");
-      rowEl.className = "review-row" + (row.isScene ? " review-row-scene" : "");
-      var textInputRef = null;
-
-      if (row.isScene){
-        var titleInput = document.createElement("input");
-        titleInput.type = "text"; titleInput.className = "review-scene-input"; titleInput.value = row.title;
-        titleInput.addEventListener("input", function(){ row.title = titleInput.value; });
-        rowEl.appendChild(titleInput);
-      } else {
-        var typeWrap = document.createElement("div");
-        typeWrap.className = "review-type-toggle";
-        ["L","D","S","N"].forEach(function(t){
-          var b = document.createElement("button");
-          b.type = "button"; b.textContent = t;
-          b.className = "review-type-btn" + (row.type === t ? " active" : "");
-          b.addEventListener("click", function(){ row.type = t; renderReviewTable(); });
-          typeWrap.appendChild(b);
-        });
-        rowEl.appendChild(typeWrap);
-
-        var charInput = document.createElement("input");
-        charInput.type = "text"; charInput.className = "review-char-input"; charInput.value = row.character;
-        charInput.setAttribute("list", "review-char-datalist");
-        charInput.placeholder = "キャラ";
-        charInput.style.display = row.type === "L" ? "" : "none";
-        charInput.addEventListener("input", function(){ row.character = charInput.value; });
-        rowEl.appendChild(charInput);
-
-        var textInput = document.createElement("input");
-        textInput.type = "text"; textInput.className = "review-text-input"; textInput.value = row.text;
-        textInput.addEventListener("input", function(){ row.text = textInput.value; });
-        rowEl.appendChild(textInput);
-        textInputRef = textInput;
-      }
-
-      var actions = document.createElement("div");
-      actions.className = "review-row-actions";
-
-      actions.appendChild(mkSmallBtn("▲", "上へ移動", function(){
-        if (idx === 0) return;
-        var tmp = reviewRows[idx-1]; reviewRows[idx-1] = reviewRows[idx]; reviewRows[idx] = tmp;
-        renderReviewTable();
-      }));
-      actions.appendChild(mkSmallBtn("▼", "下へ移動", function(){
-        if (idx === reviewRows.length-1) return;
-        var tmp = reviewRows[idx+1]; reviewRows[idx+1] = reviewRows[idx]; reviewRows[idx] = tmp;
-        renderReviewTable();
-      }));
-
-      if (!row.isScene){
-        actions.appendChild(mkSmallBtn("結合", "直前の行にテキストを連結", function(){
-          if (idx === 0 || reviewRows[idx-1].isScene) return;
-          reviewRows[idx-1].text += row.text;
-          reviewRows.splice(idx, 1);
-          renderReviewTable();
-        }));
-        actions.appendChild(mkSmallBtn("分割", "カーソル位置で2行に分割", function(){
-          var text = row.text;
-          var pos = textInputRef && textInputRef.selectionStart != null ? textInputRef.selectionStart : Math.floor(text.length/2);
-          if (pos <= 0 || pos >= text.length) pos = Math.floor(text.length/2);
-          if (!text){ return; }
-          row.text = text.slice(0, pos);
-          reviewRows.splice(idx+1, 0, { isScene:false, type:row.type, character:row.character, text:text.slice(pos) });
-          renderReviewTable();
-        }));
-      }
-
-      actions.appendChild(mkSmallBtn("削除", "この行を削除", function(){
-        reviewRows.splice(idx, 1);
-        renderReviewTable();
-      }));
-
-      rowEl.appendChild(actions);
-      wrap.appendChild(rowEl);
+      wrap.appendChild(idx === reviewEditingIdx ? reviewRowEditor(row, idx, roles) : reviewRowView(row, idx, roles));
+      wrap.appendChild(reviewGap(idx + 1));
     });
+    wrap.scrollTop = keepScroll;
   }
 
   document.getElementById("import-parse-btn").addEventListener("click", function(){
@@ -3335,14 +3467,14 @@
     }
 
     reviewRows = buildReviewRows(flatCues);
+    reviewEditingIdx = -1;
     setReviewEditMode(null);
     renderReviewTable();
     showImportSubview("review");
   });
 
   document.getElementById("review-add-row-btn").addEventListener("click", function(){
-    reviewRows.push({ isScene:false, type:"L", character:"", text:"" });
-    renderReviewTable();
+    insertReviewRow(reviewRows.length);
   });
 
   document.getElementById("review-back-btn").addEventListener("click", function(){
