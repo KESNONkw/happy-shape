@@ -403,24 +403,32 @@
   .export-choice b{ font-size:.95rem; }
   .export-choice span{ font-size:.75rem; color:var(--ink-dim); font-weight:normal; }
   .export-opt{ display:flex; align-items:center; gap:.4rem; font-size:.82rem; margin:0 0 .8rem; }
+  .export-fields{ display:grid; grid-template-columns:auto 1fr; gap:.4rem .6rem; align-items:center; font-size:.82rem; margin:0 0 .8rem; }
+  .export-fields input{ padding:.35rem .5rem; border:1px solid var(--border); border-radius:6px; background:var(--surface-2); color:var(--ink); font-size:.85rem; min-width:0; }
+  .export-cast{ display:flex; flex-wrap:wrap; gap:.3rem .7rem; }
+  .export-cast label{ display:flex; align-items:center; gap:.25rem; }
+  .export-cast select{ padding:.15rem .2rem; border:1px solid var(--border); border-radius:6px; background:var(--surface-2); color:var(--ink); font-size:.8rem; }
+  :root[data-ui="mobile"] .export-fields input, :root[data-ui="mobile"] .export-cast select{ font-size:16px; }
+  /* The PDF is laid out like the play's own script: vertical text, two tiers per
+     A4 page, every column placed by hand (see exportPdf). Sizes are CSS px on a
+     793.7 x 1122.5 page, measured from the original. */
   #print-area{ display:none; }
   @media print{
-    @page{ size:A4; margin:18mm 16mm; }
-    body.printing{ background:#fff !important; color:#000 !important; padding:0 !important; }
+    @page{ size:A4; margin:0; }
+    html, body.printing{ background:#fff !important; color:#000 !important; padding:0 !important; margin:0 !important; }
     body.printing > *:not(#print-area){ display:none !important; }
     body.printing #print-area{ display:block; }
   }
-  #print-area{ font-family:var(--serif); color:#000; font-size:10.5pt; line-height:1.75; }
-  #print-area h1{ text-align:center; font-size:17pt; margin:0 0 1.2em; }
-  #print-area .pr-cast{ margin:0 0 1.6em; }
-  #print-area .pr-cast b{ display:block; margin-bottom:.2em; }
-  #print-area .pr-cast span{ display:inline-block; margin:0 1.2em 0 1em; }
-  #print-area .pr-scene{ font-weight:700; font-size:12pt; margin:1.6em 0 .6em; border-bottom:1px solid #000; break-after:avoid; page-break-after:avoid; }
-  #print-area .pr-line{ display:grid; grid-template-columns:5.5em 1fr; margin:0 0 .35em; break-inside:avoid; page-break-inside:avoid; }
-  #print-area .pr-line .who{ font-weight:700; }
-  #print-area .pr-dir, #print-area .pr-note{ margin:.3em 0 .5em 8em; font-size:10pt; break-inside:avoid; page-break-inside:avoid; }
-  #print-area .pr-note{ color:#666; font-style:italic; }
-  #print-area .pr-line .say, #print-area .pr-dir, #print-area .pr-note{ white-space:pre-wrap; }
+  .pr-page{ position:relative; width:793.7px; height:1122.5px; overflow:hidden; background:#fff; break-after:page; page-break-after:always; }
+  .pr-page:last-child{ break-after:auto; page-break-after:auto; }
+  .pr-col, .pr-measure{
+    writing-mode:vertical-rl; text-orientation:mixed; color:#000;
+    font-family:"MS Mincho","ＭＳ 明朝","Hiragino Mincho ProN","Yu Mincho","YuMincho","Noto Serif JP",serif;
+    font-size:14px; letter-spacing:.64px; line-height:24px; font-weight:normal; font-style:normal;
+  }
+  .pr-col{ position:absolute; width:24px; white-space:pre; }
+  .pr-measure{ position:absolute; left:-20000px; top:0; visibility:hidden; height:373px; white-space:pre-wrap;
+    line-break:strict; word-break:normal; overflow-wrap:anywhere; }
 
   /* ---------- settings drawer ---------- */
   #overlay{ position:fixed; inset:0; background:color-mix(in srgb, #000 45%, transparent); z-index:29; display:none; }
@@ -734,10 +742,15 @@
 <dialog id="export-dialog">
   <h4>台本を出力</h4>
   <p class="export-name" id="export-name"></p>
+  <div class="export-fields">
+    <span>題名</span><input type="text" id="export-title">
+    <span>作者</span><input type="text" id="export-author" placeholder="（表紙の下に入ります）">
+    <span>キャスト</span><div class="export-cast" id="export-cast"></div>
+  </div>
   <label class="export-opt" id="export-notes-wrap"><input type="checkbox" id="export-notes"> メモも入れる</label>
   <div class="export-choices">
-    <button class="btn ghost export-choice" id="export-pdf-btn"><b>PDF</b><span>印刷画面が開きます。送信先で「PDFに保存」を選んでください</span></button>
-    <button class="btn ghost export-choice" id="export-docx-btn"><b>Word文書（.docx）</b><span>Word・Googleドキュメント・Pagesで開いて編集できます</span></button>
+    <button class="btn ghost export-choice" id="export-pdf-btn"><b>PDF</b><span>縦書き・二段組の台本形式。印刷画面が開くので、送信先で「PDFに保存」を選んでください</span></button>
+    <button class="btn ghost export-choice" id="export-docx-btn"><b>Word文書（.docx）</b><span>同じ縦書き・二段組でWordで開いて編集できます（Googleドキュメントは縦書き非対応）</span></button>
   </div>
   <div class="cs-dbtn"><button class="btn ghost" id="export-cancel-btn">閉じる</button></div>
 </dialog>
@@ -2987,33 +3000,156 @@
     return (data.name || "台本").replace(/[\\\/:*?"<>|]/g, "_").trim() || "台本";
   }
 
+  // Title, author and each role's gender for the cover page — not part of the
+  // script data, so they're asked for here and remembered per script on this device.
+  var BUILTIN_EXPORT_META = { title:"幸せのカタチ", author:"瓜生　太知", gender:{ "知恵":"女", "学":"男", "永遠":"女", "父":"男", "母":"女" } };
+  function loadExportMeta(data){
+    var saved = null;
+    try { saved = JSON.parse(localStorage.getItem("exportMeta::" + data.id) || "null"); } catch (e){}
+    if (saved) return saved;
+    if (data.id === BUILTIN_SCRIPT_META.id) return JSON.parse(JSON.stringify(BUILTIN_EXPORT_META));
+    return { title: data.name, author:"", gender:{} };
+  }
+  function readExportMeta(){
+    var meta = { title: document.getElementById("export-title").value.trim() || exportData.name,
+                 author: document.getElementById("export-author").value.trim(), gender:{} };
+    Array.prototype.forEach.call(document.querySelectorAll("#export-cast select"), function(s){
+      if (s.value) meta.gender[s.dataset.role] = s.value;
+    });
+    try { localStorage.setItem("exportMeta::" + exportData.id, JSON.stringify(meta)); } catch (e){}
+    return meta;
+  }
+
   function openExportDialog(data){
     exportData = data;
+    var meta = loadExportMeta(data);
     document.getElementById("export-name").textContent = data.name;
+    document.getElementById("export-title").value = meta.title || data.name;
+    document.getElementById("export-author").value = meta.author || "";
+    var castEl = document.getElementById("export-cast");
+    castEl.innerHTML = "";
+    exportCast(data).forEach(function(name){
+      var label = document.createElement("label");
+      label.appendChild(document.createTextNode(name));
+      var sel = document.createElement("select");
+      sel.dataset.role = name;
+      [["", "—"], ["男", "男"], ["女", "女"]].forEach(function(o){
+        var opt = document.createElement("option"); opt.value = o[0]; opt.textContent = o[1]; sel.appendChild(opt);
+      });
+      sel.value = (meta.gender && meta.gender[name]) || "";
+      label.appendChild(sel);
+      castEl.appendChild(label);
+    });
     var hasNotes = data.scenes.some(function(s){ return s.cues.some(function(c){ return c[0] === "N"; }); });
     document.getElementById("export-notes-wrap").style.display = hasNotes ? "" : "none";
     document.getElementById("export-notes").checked = false;
     exportDialogEl.showModal();
   }
 
-  function exportPdf(data, withNotes){
-    var area = document.getElementById("print-area");
-    var h = "<h1>" + escapeHtml(data.name) + "</h1>";
-    var cast = exportCast(data);
-    if (cast.length){
-      h += '<div class="pr-cast"><b>登場人物</b>' + cast.map(function(n){ return "<span>" + escapeHtml(n) + "</span>"; }).join("") + "</div>";
-    }
+  // The script as the play's own manuscript lays it out: a cover (title, cast,
+  // author), then one paragraph per cue with a blank line between them.
+  // Dialogue is "role + text" hanging under the text; directions sit 2 chars down.
+  function manuscriptParagraphs(data, meta, withNotes){
+    var cover = [{ text: meta.title, indent:0 }, null, { text:"〇キャスト", indent:0 }];
+    exportCast(data).forEach(function(n){
+      cover.push({ text: n + (meta.gender[n] ? "（" + meta.gender[n] + "）" : ""), indent:0 });
+    });
+    var body = [];
+    function add(p){ if (body.length) body.push(null); body.push(p); }
     data.scenes.forEach(function(s){
-      if (s.title) h += '<div class="pr-scene">' + escapeHtml(s.title) + "</div>";
+      if (s.title) add({ text: s.title, indent:0 });
       s.cues.forEach(function(c){
-        var text = escapeHtml(c[2] || "");
-        if (c[0] === "L") h += '<div class="pr-line"><span class="who">' + escapeHtml(c[1] || "") + '</span><span class="say">' + text + "</span></div>";
-        else if (c[0] === "D") h += '<div class="pr-dir">' + text + "</div>";
-        else if (c[0] === "S") h += '<div class="pr-dir">♪ ' + text + "</div>";
-        else if (c[0] === "N" && withNotes) h += '<div class="pr-note">※ ' + text + "</div>";
+        var text = String(c[2] || "");
+        if (c[0] === "L"){
+          var who = c[1] || "";
+          var pad = who.length >= 3 ? "　" : (who.length === 2 ? "　" : "　　");
+          add({ text: who + pad + text, indent:0, hang:3, who: who, pad: pad, say: text });
+        } else if (c[0] === "D" || c[0] === "S"){
+          add({ text: text, indent:2 });
+        } else if (c[0] === "N" && withNotes){
+          add({ text: "※" + text, indent:2 });
+        }
       });
     });
-    area.innerHTML = h;
+    return { cover: cover, author: meta.author, body: body };
+  }
+
+  // PDF: lay the manuscript out by hand. Each paragraph is first set in a hidden
+  // vertical box one tier tall, so the browser does the line breaking (kinsoku,
+  // half-width letters); then each resulting column is placed on the page grid:
+  // 23 columns per tier, two tiers per page, right to left.
+  var PR = { colRight:656.7, colPitch:24, cols:23, tierTops:[133, 585], ch:14.64 };
+  function measureColumns(paragraphs){
+    var box = document.createElement("div");
+    box.className = "pr-measure";
+    document.body.appendChild(box);
+    var out = [];
+    try {
+      paragraphs.forEach(function(p){
+        if (!p){ out.push(null); return; }
+        var el = document.createElement("div");
+        var lead = (p.hang || p.indent || 0) * PR.ch;
+        el.style.paddingTop = lead + "px";
+        if (p.hang) el.style.textIndent = (-p.hang * PR.ch) + "px";
+        el.textContent = p.text || " ";
+        box.innerHTML = "";
+        box.appendChild(el);
+        var top0 = box.getBoundingClientRect().top;
+        var node = el.firstChild, str = node.data, range = document.createRange();
+        var cols = [], cur = null, prevTop = Infinity;
+        for (var i = 0; i < str.length; ){
+          var cp = str.codePointAt(i), len = cp > 0xFFFF ? 2 : 1;
+          if (str[i] === "\n"){ cur = null; prevTop = Infinity; i += len; continue; }
+          range.setStart(node, i); range.setEnd(node, i + len);
+          var r = range.getClientRects()[0] || range.getBoundingClientRect();
+          if (!cur || r.top < prevTop - 2){
+            cur = { start:i, end:i + len, top: r.top - top0 };
+            cols.push(cur);
+          } else cur.end = i + len;
+          prevTop = r.top;
+          i += len;
+        }
+        if (!cols.length) cols.push({ start:0, end:0, top:0 });
+        cols.forEach(function(c){ out.push({ text: str.slice(c.start, c.end), top: Math.max(0, c.top) }); });
+      });
+    } finally { box.remove(); }
+    return out;
+  }
+
+  function exportPdf(data, meta, withNotes){
+    var m = manuscriptParagraphs(data, meta, withNotes);
+    var cover = measureColumns(m.cover), author = m.author ? measureColumns([{ text: m.author, indent:0 }]) : [];
+    var body = measureColumns(m.body);
+    var area = document.getElementById("print-area");
+    area.innerHTML = "";
+    var page = null, tier = 2, col = 0;
+    function newTier(){
+      if (tier === 1){ tier = 2; }
+      else { page = document.createElement("div"); page.className = "pr-page"; area.appendChild(page); tier = 1; }
+      col = 0;
+    }
+    function place(c){
+      if (col >= PR.cols) newTier();
+      if (!c){ if (col > 0) col++; return; }           // a blank column, but never at the top of a tier
+      var d = document.createElement("div");
+      d.className = "pr-col";
+      d.textContent = c.text;
+      d.style.left = (PR.colRight - col * PR.colPitch) + "px";
+      d.style.top = (PR.tierTops[tier - 1] + c.top) + "px";
+      page.appendChild(d);
+      col++;
+    }
+    newTier();
+    cover.forEach(place);
+    if (author.length){                       // the author sits low in the lower tier
+      var ad = document.createElement("div");
+      ad.className = "pr-col"; ad.textContent = author.map(function(c){ return c.text; }).join("");
+      ad.style.left = PR.colRight + "px"; ad.style.bottom = (1122.5 - 1000) + "px";
+      page.appendChild(ad);
+    }
+    tier = 2; newTier();                                                  // body starts on a fresh page
+    body.forEach(place);
+
     // The browser names the saved PDF after the page title.
     var oldTitle = document.title;
     document.title = exportFileName(data);
@@ -3023,10 +3159,10 @@
       document.title = oldTitle;
       document.body.classList.remove("printing");
     });
-    setTimeout(function(){ window.print(); }, 100);
+    setTimeout(function(){ window.print(); }, 150);
   }
 
-  // A minimal .docx: an uncompressed ("stored") zip of four XML parts.
+  // A minimal .docx: an uncompressed ("stored") zip of five XML parts.
   var crcTable = null;
   function crc32(bytes){
     if (!crcTable){
@@ -3058,48 +3194,43 @@
     return new Blob(parts.concat(central, [end]), { type:"application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
   }
 
-  function exportDocx(data, withNotes){
+  // Word: the same manuscript, left to Word's own vertical (tbRl) two-column
+  // layout on a 25-char x 23-line grid, so it stays editable.
+  function exportDocx(data, meta, withNotes){
     function x(s){
       return String(s || "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
         .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
     }
-    function runs(text, rpr){
+    function runs(text){
       return String(text || "").split(/\r?\n/).map(function(t, i){
-        return (i ? "<w:r><w:br/></w:r>" : "") + '<w:r>' + (rpr ? "<w:rPr>" + rpr + "</w:rPr>" : "") + '<w:t xml:space="preserve">' + x(t) + "</w:t></w:r>";
+        return (i ? "<w:r><w:br/></w:r>" : "") + '<w:r><w:t xml:space="preserve">' + x(t) + "</w:t></w:r>";
       }).join("");
     }
-    function p(ppr, body){ return "<w:p><w:pPr>" + ppr + "</w:pPr>" + body + "</w:p>"; }
-    var NAME_W = 1680, DIR_W = 2520;
-    var b = p('<w:jc w:val="center"/><w:spacing w:after="360"/>', runs(data.name, '<w:b/><w:sz w:val="34"/>'));
-    var cast = exportCast(data);
-    if (cast.length){
-      b += p('<w:spacing w:after="60"/>', runs("登場人物", "<w:b/>"));
-      cast.forEach(function(n){ b += p('<w:ind w:left="420"/><w:spacing w:after="0"/>', runs(n)); });
-      b += p("", "");
+    var CH = 219; // one grid character, in twips
+    // Word reads leftChars as the indent *besides* the hanging part, so a hanging
+    // paragraph gets leftChars=0 (its w:left still counts the hang).
+    function para(p, extra){
+      if (!p) return extra ? "<w:p><w:pPr>" + extra + "</w:pPr></w:p>" : "<w:p/>";
+      var ind = p.hang ? '<w:ind w:leftChars="0" w:left="' + p.hang * CH + '" w:hangingChars="' + p.hang * 100 + '" w:hanging="' + p.hang * CH + '"/>'
+              : p.indent ? '<w:ind w:leftChars="' + p.indent * 100 + '" w:left="' + p.indent * CH + '"/>' : "";
+      var ppr = (extra || "") + ind;
+      return "<w:p>" + (ppr ? "<w:pPr>" + ppr + "</w:pPr>" : "") + runs(p.text) + "</w:p>";
     }
-    data.scenes.forEach(function(s){
-      if (s.title){
-        b += p('<w:keepNext/><w:spacing w:before="360" w:after="120"/><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="000000"/></w:pBdr>',
-          runs(s.title, '<w:b/><w:sz w:val="24"/>'));
-      }
-      s.cues.forEach(function(c){
-        if (c[0] === "L"){
-          b += p('<w:tabs><w:tab w:val="left" w:pos="' + NAME_W + '"/></w:tabs><w:spacing w:after="60"/><w:ind w:left="' + NAME_W + '" w:hanging="' + NAME_W + '"/>',
-            runs(c[1], "<w:b/>") + "<w:r><w:tab/></w:r>" + runs(c[2]));
-        } else if (c[0] === "D" || c[0] === "S"){
-          b += p('<w:spacing w:before="60" w:after="120"/><w:ind w:left="' + DIR_W + '"/>', runs((c[0] === "S" ? "♪ " : "") + c[2], '<w:sz w:val="20"/>'));
-        } else if (c[0] === "N" && withNotes){
-          b += p('<w:spacing w:after="120"/><w:ind w:left="' + DIR_W + '"/>', runs("※ " + c[2], '<w:i/><w:color w:val="777777"/><w:sz w:val="20"/>'));
-        }
-      });
-    });
+    var m = manuscriptParagraphs(data, meta, withNotes);
+    var b = m.cover.map(function(p){ return para(p); }).join("");
+    if (m.author) b += '<w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:br w:type="column"/></w:r>' + runs(m.author) + "</w:p>";
+    b += m.body.map(function(p, i){ return para(p, i === 0 ? "<w:pageBreakBefore/>" : ""); }).join("");
     var W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+    var font = '<w:rFonts w:ascii="ＭＳ 明朝" w:hAnsi="ＭＳ 明朝" w:eastAsia="ＭＳ 明朝"/>';
     var files = [
-      { name:"[Content_Types].xml", text:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>' },
+      { name:"[Content_Types].xml", text:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/></Types>' },
       { name:"_rels/.rels", text:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>' },
-      { name:"word/_rels/document.xml.rels", text:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
-      { name:"word/styles.xml", text:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles ' + W + '><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Yu Mincho" w:hAnsi="Yu Mincho" w:eastAsia="游明朝"/><w:sz w:val="21"/><w:lang w:val="en-US" w:eastAsia="ja-JP"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="320" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>' },
-      { name:"word/document.xml", text:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ' + W + '><w:body>' + b + '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="567" w:footer="567" w:gutter="0"/></w:sectPr></w:body></w:document>' }
+      { name:"word/_rels/document.xml.rels", text:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/></Relationships>' },
+      { name:"word/settings.xml", text:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings ' + W + '><w:defaultTabStop w:val="840"/><w:characterSpacingControl w:val="compressPunctuation"/><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>' },
+      { name:"word/styles.xml", text:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles ' + W + '><w:docDefaults><w:rPrDefault><w:rPr>' + font + '<w:kern w:val="2"/><w:sz w:val="21"/><w:szCs w:val="21"/><w:lang w:val="en-US" w:eastAsia="ja-JP"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:widowControl w:val="0"/><w:jc w:val="both"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>' },
+      { name:"word/document.xml", text:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ' + W + '><w:body>' + b +
+        '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1995" w:right="1780" w:bottom="2577" w:left="1814" w:header="851" w:footer="992" w:gutter="0"/>' +
+        '<w:cols w:num="2" w:space="1290"/><w:textDirection w:val="tbRl"/><w:docGrid w:type="linesAndChars" w:linePitch="361" w:charSpace="1949"/></w:sectPr></w:body></w:document>' }
     ];
     var url = URL.createObjectURL(zipStore(files));
     var a = document.createElement("a");
@@ -3110,14 +3241,15 @@
 
   document.getElementById("export-cancel-btn").addEventListener("click", function(){ exportDialogEl.close(); });
   document.getElementById("export-pdf-btn").addEventListener("click", function(){
-    var withNotes = document.getElementById("export-notes").checked;
+    var withNotes = document.getElementById("export-notes").checked, meta = readExportMeta();
     exportDialogEl.close();
-    exportPdf(exportData, withNotes);
+    try { exportPdf(exportData, meta, withNotes); }
+    catch (e){ alert("PDFを作れませんでした：" + (e && e.message ? e.message : e)); }
   });
   document.getElementById("export-docx-btn").addEventListener("click", function(){
-    var withNotes = document.getElementById("export-notes").checked;
+    var withNotes = document.getElementById("export-notes").checked, meta = readExportMeta();
     exportDialogEl.close();
-    try { exportDocx(exportData, withNotes); }
+    try { exportDocx(exportData, meta, withNotes); }
     catch (e){ alert("Word文書を作れませんでした：" + (e && e.message ? e.message : e)); }
   });
 
