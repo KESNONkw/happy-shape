@@ -392,6 +392,36 @@
   .cs-dbtn{ display:flex; gap:.5rem; justify-content:flex-end; }
   .cs-dbtn .cs-yes{ background:var(--danger); border-color:var(--danger); }
 
+  /* ---------- script export (PDF via print / Word .docx) ---------- */
+  #export-dialog{ border:1px solid var(--border); border-radius:14px; padding:1.2rem; background:var(--surface); color:var(--ink);
+    max-width:26rem; width:calc(100% - 2rem); }
+  #export-dialog::backdrop{ background:rgba(0,0,0,.5); }
+  #export-dialog h4{ margin:0 0 .2rem; font-family:var(--serif); font-size:1.05rem; }
+  #export-dialog .export-name{ margin:0 0 .9rem; font-size:.82rem; color:var(--ink-dim); }
+  .export-choices{ display:flex; flex-direction:column; gap:.5rem; margin-bottom:.8rem; }
+  .export-choice{ display:flex; flex-direction:column; align-items:flex-start; gap:.15rem; text-align:left; padding:.75rem .9rem; }
+  .export-choice b{ font-size:.95rem; }
+  .export-choice span{ font-size:.75rem; color:var(--ink-dim); font-weight:normal; }
+  .export-opt{ display:flex; align-items:center; gap:.4rem; font-size:.82rem; margin:0 0 .8rem; }
+  #print-area{ display:none; }
+  @media print{
+    @page{ size:A4; margin:18mm 16mm; }
+    body.printing{ background:#fff !important; color:#000 !important; padding:0 !important; }
+    body.printing > *:not(#print-area){ display:none !important; }
+    body.printing #print-area{ display:block; }
+  }
+  #print-area{ font-family:var(--serif); color:#000; font-size:10.5pt; line-height:1.75; }
+  #print-area h1{ text-align:center; font-size:17pt; margin:0 0 1.2em; }
+  #print-area .pr-cast{ margin:0 0 1.6em; }
+  #print-area .pr-cast b{ display:block; margin-bottom:.2em; }
+  #print-area .pr-cast span{ display:inline-block; margin:0 1.2em 0 1em; }
+  #print-area .pr-scene{ font-weight:700; font-size:12pt; margin:1.6em 0 .6em; border-bottom:1px solid #000; break-after:avoid; page-break-after:avoid; }
+  #print-area .pr-line{ display:grid; grid-template-columns:5.5em 1fr; margin:0 0 .35em; break-inside:avoid; page-break-inside:avoid; }
+  #print-area .pr-line .who{ font-weight:700; }
+  #print-area .pr-dir, #print-area .pr-note{ margin:.3em 0 .5em 8em; font-size:10pt; break-inside:avoid; page-break-inside:avoid; }
+  #print-area .pr-note{ color:#666; font-style:italic; }
+  #print-area .pr-line .say, #print-area .pr-dir, #print-area .pr-note{ white-space:pre-wrap; }
+
   /* ---------- settings drawer ---------- */
   #overlay{ position:fixed; inset:0; background:color-mix(in srgb, #000 45%, transparent); z-index:29; display:none; }
   #overlay.open{ display:block; }
@@ -481,7 +511,8 @@
   :root[data-ui="mobile"] .role-grid{ gap:.55rem; }
   :root[data-ui="mobile"] .role-chip{ min-height:2.9rem; padding:.5rem 1.15rem; font-size:.95rem; }
   :root[data-ui="mobile"] .start-btn{ min-height:3.4rem; font-size:1.02rem; }
-  :root[data-ui="mobile"] .script-card{ padding:.9rem; }
+  :root[data-ui="mobile"] .script-card{ padding:.9rem; flex-wrap:wrap; }
+  :root[data-ui="mobile"] .script-card-actions{ flex-wrap:wrap; margin-left:auto; }
   :root[data-ui="mobile"] .script-card-actions .btn{ min-height:2.75rem; padding:.5rem .9rem; font-size:.88rem; }
   :root[data-ui="mobile"] .import-input,
   :root[data-ui="mobile"] .import-textarea,
@@ -699,6 +730,19 @@
     <button class="btn primary cs-yes" id="cs-yes-btn">もう一度鳴らす</button>
   </div>
 </dialog>
+
+<dialog id="export-dialog">
+  <h4>台本を出力</h4>
+  <p class="export-name" id="export-name"></p>
+  <label class="export-opt" id="export-notes-wrap"><input type="checkbox" id="export-notes"> メモも入れる</label>
+  <div class="export-choices">
+    <button class="btn ghost export-choice" id="export-pdf-btn"><b>PDF</b><span>印刷画面が開きます。送信先で「PDFに保存」を選んでください</span></button>
+    <button class="btn ghost export-choice" id="export-docx-btn"><b>Word文書（.docx）</b><span>Word・Googleドキュメント・Pagesで開いて編集できます</span></button>
+  </div>
+  <div class="cs-dbtn"><button class="btn ghost" id="export-cancel-btn">閉じる</button></div>
+</dialog>
+
+<div id="print-area"></div>
 
 <footer id="footer" style="display:none;">
   <div class="status-line">
@@ -2893,6 +2937,16 @@
     });
     actions.appendChild(editBtn);
 
+    var exportBtn = document.createElement("button");
+    exportBtn.type = "button"; exportBtn.className = "btn ghost"; exportBtn.textContent = "出力";
+    exportBtn.title = "PDFまたはWord文書で台本を出力";
+    exportBtn.addEventListener("click", function(){
+      getScriptData(record).then(openExportDialog).catch(function(){
+        alert("台本を読み込めませんでした。通信状況を確認して、もう一度お試しください。");
+      });
+    });
+    actions.appendChild(exportBtn);
+
     if (!record.builtin){
       var delBtn = document.createElement("button");
       delBtn.type = "button"; delBtn.className = "btn ghost"; delBtn.textContent = "削除";
@@ -2915,6 +2969,157 @@
     scriptListEl.appendChild(card);
     return card;
   }
+
+  /* ---------------- script export: PDF (print) or Word (.docx) ---------------- */
+  var exportDialogEl = document.getElementById("export-dialog");
+  var exportData = null;
+
+  // Roles in the order they're listed for the script, plus any that only appear in its lines.
+  function exportCast(data){
+    var cast = (data.charList || []).slice();
+    data.scenes.forEach(function(s){
+      s.cues.forEach(function(c){ if (c[0] === "L" && c[1] && cast.indexOf(c[1]) < 0) cast.push(c[1]); });
+    });
+    return cast;
+  }
+
+  function exportFileName(data){
+    return (data.name || "台本").replace(/[\\\/:*?"<>|]/g, "_").trim() || "台本";
+  }
+
+  function openExportDialog(data){
+    exportData = data;
+    document.getElementById("export-name").textContent = data.name;
+    var hasNotes = data.scenes.some(function(s){ return s.cues.some(function(c){ return c[0] === "N"; }); });
+    document.getElementById("export-notes-wrap").style.display = hasNotes ? "" : "none";
+    document.getElementById("export-notes").checked = false;
+    exportDialogEl.showModal();
+  }
+
+  function exportPdf(data, withNotes){
+    var area = document.getElementById("print-area");
+    var h = "<h1>" + escapeHtml(data.name) + "</h1>";
+    var cast = exportCast(data);
+    if (cast.length){
+      h += '<div class="pr-cast"><b>登場人物</b>' + cast.map(function(n){ return "<span>" + escapeHtml(n) + "</span>"; }).join("") + "</div>";
+    }
+    data.scenes.forEach(function(s){
+      if (s.title) h += '<div class="pr-scene">' + escapeHtml(s.title) + "</div>";
+      s.cues.forEach(function(c){
+        var text = escapeHtml(c[2] || "");
+        if (c[0] === "L") h += '<div class="pr-line"><span class="who">' + escapeHtml(c[1] || "") + '</span><span class="say">' + text + "</span></div>";
+        else if (c[0] === "D") h += '<div class="pr-dir">' + text + "</div>";
+        else if (c[0] === "S") h += '<div class="pr-dir">♪ ' + text + "</div>";
+        else if (c[0] === "N" && withNotes) h += '<div class="pr-note">※ ' + text + "</div>";
+      });
+    });
+    area.innerHTML = h;
+    // The browser names the saved PDF after the page title.
+    var oldTitle = document.title;
+    document.title = exportFileName(data);
+    document.body.classList.add("printing");
+    window.addEventListener("afterprint", function done(){
+      window.removeEventListener("afterprint", done);
+      document.title = oldTitle;
+      document.body.classList.remove("printing");
+    });
+    setTimeout(function(){ window.print(); }, 100);
+  }
+
+  // A minimal .docx: an uncompressed ("stored") zip of four XML parts.
+  var crcTable = null;
+  function crc32(bytes){
+    if (!crcTable){
+      crcTable = new Uint32Array(256);
+      for (var n = 0; n < 256; n++){
+        var c = n;
+        for (var k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+        crcTable[n] = c >>> 0;
+      }
+    }
+    var crc = 0xFFFFFFFF;
+    for (var i = 0; i < bytes.length; i++) crc = crcTable[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+  }
+  function zipStore(files){
+    var enc = new TextEncoder(), parts = [], central = [], offset = 0;
+    function u16(v){ return [v & 255, (v >>> 8) & 255]; }
+    function u32(v){ return [v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255]; }
+    files.forEach(function(f){
+      var name = enc.encode(f.name), data = enc.encode(f.text), crc = crc32(data);
+      var common = [].concat(u16(20), u16(0x0800), u16(0), u16(0), u16(0x21), u32(crc), u32(data.length), u32(data.length), u16(name.length), u16(0));
+      var local = new Uint8Array([].concat(u32(0x04034b50), common));
+      parts.push(local, name, data);
+      central.push(new Uint8Array([].concat(u32(0x02014b50), u16(20), common, u16(0), u16(0), u16(0), u32(0), u32(offset))), name);
+      offset += local.length + name.length + data.length;
+    });
+    var cdSize = central.reduce(function(s, p){ return s + p.length; }, 0);
+    var end = new Uint8Array([].concat(u32(0x06054b50), u16(0), u16(0), u16(files.length), u16(files.length), u32(cdSize), u32(offset), u16(0)));
+    return new Blob(parts.concat(central, [end]), { type:"application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+  }
+
+  function exportDocx(data, withNotes){
+    function x(s){
+      return String(s || "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
+        .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    }
+    function runs(text, rpr){
+      return String(text || "").split(/\r?\n/).map(function(t, i){
+        return (i ? "<w:r><w:br/></w:r>" : "") + '<w:r>' + (rpr ? "<w:rPr>" + rpr + "</w:rPr>" : "") + '<w:t xml:space="preserve">' + x(t) + "</w:t></w:r>";
+      }).join("");
+    }
+    function p(ppr, body){ return "<w:p><w:pPr>" + ppr + "</w:pPr>" + body + "</w:p>"; }
+    var NAME_W = 1680, DIR_W = 2520;
+    var b = p('<w:jc w:val="center"/><w:spacing w:after="360"/>', runs(data.name, '<w:b/><w:sz w:val="34"/>'));
+    var cast = exportCast(data);
+    if (cast.length){
+      b += p('<w:spacing w:after="60"/>', runs("登場人物", "<w:b/>"));
+      cast.forEach(function(n){ b += p('<w:ind w:left="420"/><w:spacing w:after="0"/>', runs(n)); });
+      b += p("", "");
+    }
+    data.scenes.forEach(function(s){
+      if (s.title){
+        b += p('<w:keepNext/><w:spacing w:before="360" w:after="120"/><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="000000"/></w:pBdr>',
+          runs(s.title, '<w:b/><w:sz w:val="24"/>'));
+      }
+      s.cues.forEach(function(c){
+        if (c[0] === "L"){
+          b += p('<w:tabs><w:tab w:val="left" w:pos="' + NAME_W + '"/></w:tabs><w:spacing w:after="60"/><w:ind w:left="' + NAME_W + '" w:hanging="' + NAME_W + '"/>',
+            runs(c[1], "<w:b/>") + "<w:r><w:tab/></w:r>" + runs(c[2]));
+        } else if (c[0] === "D" || c[0] === "S"){
+          b += p('<w:spacing w:before="60" w:after="120"/><w:ind w:left="' + DIR_W + '"/>', runs((c[0] === "S" ? "♪ " : "") + c[2], '<w:sz w:val="20"/>'));
+        } else if (c[0] === "N" && withNotes){
+          b += p('<w:spacing w:after="120"/><w:ind w:left="' + DIR_W + '"/>', runs("※ " + c[2], '<w:i/><w:color w:val="777777"/><w:sz w:val="20"/>'));
+        }
+      });
+    });
+    var W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+    var files = [
+      { name:"[Content_Types].xml", text:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>' },
+      { name:"_rels/.rels", text:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>' },
+      { name:"word/_rels/document.xml.rels", text:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
+      { name:"word/styles.xml", text:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles ' + W + '><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Yu Mincho" w:hAnsi="Yu Mincho" w:eastAsia="游明朝"/><w:sz w:val="21"/><w:lang w:val="en-US" w:eastAsia="ja-JP"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="320" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>' },
+      { name:"word/document.xml", text:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ' + W + '><w:body>' + b + '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="567" w:footer="567" w:gutter="0"/></w:sectPr></w:body></w:document>' }
+    ];
+    var url = URL.createObjectURL(zipStore(files));
+    var a = document.createElement("a");
+    a.href = url; a.download = exportFileName(data) + ".docx";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
+  }
+
+  document.getElementById("export-cancel-btn").addEventListener("click", function(){ exportDialogEl.close(); });
+  document.getElementById("export-pdf-btn").addEventListener("click", function(){
+    var withNotes = document.getElementById("export-notes").checked;
+    exportDialogEl.close();
+    exportPdf(exportData, withNotes);
+  });
+  document.getElementById("export-docx-btn").addEventListener("click", function(){
+    var withNotes = document.getElementById("export-notes").checked;
+    exportDialogEl.close();
+    try { exportDocx(exportData, withNotes); }
+    catch (e){ alert("Word文書を作れませんでした：" + (e && e.message ? e.message : e)); }
+  });
 
   // The builtin script is rendered immediately, independent of IndexedDB —
   // some viewer contexts (e.g. sandboxed iframes) block IndexedDB entirely,
