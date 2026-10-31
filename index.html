@@ -579,7 +579,12 @@
   :root[data-ui="mobile"] .btn.primary{ min-height:3.6rem; font-size:1.05rem; }
   :root[data-ui="mobile"] #back-btn,
   :root[data-ui="mobile"] #pause-btn,
-  :root[data-ui="mobile"] #restart-btn{ padding:.7rem .75rem; font-size:.8rem; flex:none; }
+  :root[data-ui="mobile"] #restart-btn{
+    /* icon over label, so the main button keeps room for "■ 保存して次へ" on one line */
+    flex:none; width:3.7rem; padding:.35rem .2rem; font-size:.72rem; line-height:1.3;
+    white-space:normal; word-break:keep-all; text-align:center;
+  }
+  :root[data-ui="mobile"] #next-btn{ white-space:nowrap; padding-left:.5rem; padding-right:.5rem; }
 
   /* --- settings: a right-hand drawer is a desktop shape; on a phone it
          becomes a bottom sheet that starts under the thumb --- */
